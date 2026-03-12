@@ -1,0 +1,97 @@
+{
+  "name": "@amethyst/pulsar-ext",
+  "version": "1.0.0",
+  // Imports
+  "imports": {
+    "wxt": "npm:wxt",
+  },
+  "tasks": {
+    "dev": "wxt"
+  },
+  "exports": {},
+  "nodeModulesDir": "auto",
+  // Compiler Options
+  "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "deno.ns",
+      "deno.worker",
+      "deno.unstable",
+      "decorators",
+      "dom.asynciterable"
+    ],
+    "checkJs": false,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "noErrorTruncation": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": false,
+    "strict": true,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "strictNullChecks": true,
+    "useUnknownInCatchVariables": true
+  },
+  // Linting Options
+  "lint": {
+    "rules": {
+      "tags": [
+        "recommended"
+      ],
+      "include": [
+        "ban-untagged-todo",
+        "camelcase",
+        "default-param-last",
+        "eqeqeq",
+        "explicit-function-return-type",
+        "explicit-module-boundary-types",
+        "guard-for-in",
+        "no-const-assign",
+        "no-eval",
+        "no-external-import",
+        "no-self-compare",
+        "no-sparse-arrays",
+        "no-sync-fn-in-async-fn",
+        "no-throw-literal",
+        "no-undef",
+        "prefer-ascii",
+        "single-var-declarator",
+        "triple-slash-reference",
+        "verbatim-module-syntax"
+      ]
+    }
+  },
+  // Formatting Options
+  "fmt": {
+    "bracePosition": "sameLine",
+    "indentWidth": 2,
+    "lineWidth": 65535,
+    "newLineKind": "lf",
+    "nextControlFlowPosition": "nextLine",
+    "semiColons": true,
+    "operatorPosition": "nextLine",
+    "proseWrap": "always",
+    "quoteProps": "consistent",
+    "singleBodyPosition": "nextLine",
+    "singleQuote": true,
+    "spaceAround": false,
+    "spaceSurroundingProperties": true,
+    "trailingCommas": "onlyMultiLine",
+    "useTabs": false,
+    "useBraces": "always",
+    "exclude": [
+      "./docmd/**/*.md"
+    ]
+  },
+  "allowScripts": [
+    "npm:esbuild@0.27.3",
+    "npm:spawn-sync@1.0.15"
+  ]
+}
