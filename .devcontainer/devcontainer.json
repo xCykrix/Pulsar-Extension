@@ -72,6 +72,5 @@
   "postStartCommand": {
     "safe": "git config --global --add safe.directory ${containerWorkspaceFolder}",
     "deps_install": "deno install",
-    "docmd": "npm install -g @docmd/core"
   }
 }

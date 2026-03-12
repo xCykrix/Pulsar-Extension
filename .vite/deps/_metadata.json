@@ -2,7 +2,24 @@
   "hash": "e9dd433c",
   "configHash": "7918ff53",
   "lockfileHash": "e3b0c442",
-  "browserHash": "bf379058",
-  "optimized": {},
-  "chunks": {}
+  "browserHash": "693d7cf0",
+  "optimized": {
+    "@material/web/button/filled-button.js": {
+      "src": "../../node_modules/.deno/@material+web@1.0.0/node_modules/@material/web/button/filled-button.js",
+      "file": "@material_web_button_filled-button__js.js",
+      "fileHash": "9a8f309f",
+      "needsInterop": false
+    },
+    "@material/web/button/outlined-button.js": {
+      "src": "../../node_modules/.deno/@material+web@1.0.0/node_modules/@material/web/button/outlined-button.js",
+      "file": "@material_web_button_outlined-button__js.js",
+      "fileHash": "b372e249",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-SPIYH7QK": {
+      "file": "chunk-SPIYH7QK.js"
+    }
+  }
 }

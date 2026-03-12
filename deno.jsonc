@@ -4,6 +4,7 @@
   // Imports
   "imports": {
     "wxt": "npm:wxt",
+    "@material/web/": "npm:@material/web@1.0.0/"
   },
   "tasks": {
     "dev": "wxt"
@@ -18,7 +19,10 @@
       "deno.worker",
       "deno.unstable",
       "decorators",
-      "dom.asynciterable"
+      "dom.asynciterable",
+      "scripthost",
+      "webworker",
+      "dom",
     ],
     "checkJs": false,
     "allowUnreachableCode": false,
