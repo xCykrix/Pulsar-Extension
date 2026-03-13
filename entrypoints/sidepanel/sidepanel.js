@@ -2,13 +2,15 @@
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:9000';
 
 let discordLoginBtn;
 let userAvatar;
 let avatarImg;
 let logoutBtn;
 let logoutMenu;
+let appToast;
+let toastTimer;
 
 // Initialize on load
 async function init() {
@@ -25,6 +27,7 @@ async function init() {
   avatarImg = document.getElementById('avatarImg');
   logoutBtn = document.getElementById('logoutBtn');
   logoutMenu = document.getElementById('logoutMenu');
+  appToast = document.getElementById('appToast');
 
   // Verify elements exist
   if (!discordLoginBtn) {
@@ -38,11 +41,14 @@ async function init() {
   discordLoginBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    discordLoginBtn.disabled = true;
+
     try {
-      discordLoginBtn.disabled = true;
       await initiateDiscordLogin();
     } catch (error) {
       console.error('Discord login error:', error);
+      showToast(getLoginErrorMessage(error), 'error');
+    } finally {
       discordLoginBtn.disabled = false;
     }
   });
@@ -115,40 +121,127 @@ function showLoggedOutState() {
 
 async function initiateDiscordLogin() {
   // Ask API to generate a session and the Discord auth URL
-  const startResponse = await fetch(`${API_BASE}/auth/discord/start`);
+  const startResponse = await fetchWithTimeout(`${API_BASE}/auth/discord/start`, {}, 8000);
   if (!startResponse.ok) {
-    throw new Error('Failed to start Discord login');
+    throw new Error('Discord login service is unavailable. Please try again.');
   }
 
-  const { sessionId, authUrl } = await startResponse.json();
+  const startData = await startResponse.json();
+  const { sessionId, authUrl } = startData || {};
+
+  if (!sessionId || !authUrl) {
+    throw new Error('Discord login service returned an invalid response.');
+  }
 
   // Open Discord auth page in a new tab; API handles the callback
   await chrome.tabs.create({ url: authUrl });
 
+  // Wait 3s before polling.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
   // Poll API until the user completes auth in the tab
   await new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const maxPollMs = 120000;
+
     const poll = setInterval(async () => {
       try {
-        const statusResponse = await fetch(`${API_BASE}/auth/discord/status?sessionId=${sessionId}`);
+        if (Date.now() - startedAt > maxPollMs) {
+          clearInterval(poll);
+          reject(new Error('Pulsar Login timed out. Please try again.'));
+          return;
+        }
+
+        const statusResponse = await fetchWithTimeout(
+          `${API_BASE}/auth/discord/status?sessionId=${sessionId}`,
+          {},
+          8000,
+        );
+
+        if (!statusResponse.ok && statusResponse.status !== 404) {
+          throw new Error('Unable to reach the Pulsar Login Service. Please try again later or report an issue.');
+        }
+
         const data = await statusResponse.json();
 
+        if (!data || !data.status) {
+          clearInterval(poll);
+          reject(new Error('Pulsar Login Status was invalid. Please report an issue.'));
+          return;
+        }
+
         if (data.status === 'complete') {
+          if (!data.user || !data.sessionToken) {
+            clearInterval(poll);
+            reject(new Error('Pulsar Login successful but session data was invalid. Please report an issue.'));
+            return;
+          }
+
           clearInterval(poll);
           await chrome.storage.local.set({ discordUser: data.user, sessionToken: data.sessionToken });
           await checkLoginStatus();
-          if (discordLoginBtn) discordLoginBtn.disabled = false;
           resolve(data);
         } else if (data.status === 'error') {
           clearInterval(poll);
-          reject(new Error(data.error || 'Login failed'));
+          reject(new Error(data.error || 'Login Failed. Please try again.'));
         }
-        // 'pending' — keep polling
+        // 'pending' - keep polling
       } catch (error) {
         clearInterval(poll);
         reject(error);
       }
     }, 1500);
   });
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      throw new Error('Discord login request timed out.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getLoginErrorMessage(error) {
+  if (error instanceof TypeError) {
+    return 'Unable to reach the Pulsar Login Service. Please try again later or report an issue. [2]';
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Login Failed. Please try again.';
+}
+
+function showToast(message, type = 'info') {
+  if (!appToast) {
+    return;
+  }
+
+  appToast.textContent = message;
+  appToast.classList.remove('toast-info', 'toast-error', 'show');
+  appToast.classList.add(type === 'error' ? 'toast-error' : 'toast-info');
+
+  requestAnimationFrame(() => {
+    appToast.classList.add('show');
+  });
+
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+
+  toastTimer = setTimeout(() => {
+    appToast.classList.remove('show');
+  }, 4200);
 }
 
 // Close menu when clicking outside

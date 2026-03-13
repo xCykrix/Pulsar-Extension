@@ -211,6 +211,41 @@
       .logout-menu-item:hover {
         background-color: var(--md-sys-color-primary-container);
       }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%) translateY(12px);
+        min-width: 260px;
+        max-width: min(92vw, 520px);
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.35;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 1200;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .toast-error {
+        background-color: #8c1d18;
+        color: #ffe9e7;
+        border: 1px solid #d35f59;
+      }
+
+      .toast-info {
+        background-color: #2f2b35;
+        color: var(--md-sys-color-on-surface);
+        border: 1px solid #5f5968;
+      }
     </style>
   </head>
   <body>
@@ -244,6 +279,7 @@
         </div>
       </div>
     </div>
+    <div class="toast toast-info" id="appToast" role="status" aria-live="polite"></div>
     <script type="module" src="./sidepanel.js"></script>
   </body>
 </html>

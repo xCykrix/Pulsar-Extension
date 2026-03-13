@@ -40,6 +40,9 @@
         "fileNestingUpdater.upstreamRepo": "antfu/vscode-file-nesting-config",
         "fileNestingUpdater.upstreamBranch": "main",
         "deno.enable": true,
+        "deno.unstable": true,
+        "typescript.experimental.useTsgo": true,
+        "js/ts.experimental.useTsgo": true,
         "extensions.webWorker": true,
         "extensions.ignoreRecommendations": true,
         "github.copilot.chat.reviewSelection.instructions": [
@@ -72,5 +75,6 @@
   "postStartCommand": {
     "safe": "git config --global --add safe.directory ${containerWorkspaceFolder}",
     "deps_install": "deno install",
+    "tsgo": "npm install -g @typescript/native-preview"
   }
 }

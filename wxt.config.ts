@@ -9,7 +9,7 @@ export default defineConfig({
       'tabs',
     ],
     host_permissions: [
-      'http://localhost:8000/*',
+      'http://localhost:9000/*',
       'https://cdn.discordapp.com/*',
       'https://fonts.googleapis.com/*',
     ],
