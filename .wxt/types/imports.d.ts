@@ -18,6 +18,13 @@ declare global {
   const injectScript: typeof import('wxt/utils/inject-script').injectScript
   const storage: typeof import('wxt/utils/storage').storage
   const useAppConfig: typeof import('wxt/utils/app-config').useAppConfig
+  const useCallback: typeof import('react').useCallback
+  const useContext: typeof import('react').useContext
+  const useEffect: typeof import('react').useEffect
+  const useMemo: typeof import('react').useMemo
+  const useReducer: typeof import('react').useReducer
+  const useRef: typeof import('react').useRef
+  const useState: typeof import('react').useState
 }
 // for type re-export
 declare global {

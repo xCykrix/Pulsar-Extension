@@ -3,6 +3,12 @@
   "version": "1.0.0",
   // Imports
   "imports": {
+    "@wxt-dev/module-react": "npm:@wxt-dev/module-react@^1.2.1",
+    "react": "npm:react@^19.2.4",
+    "react/jsx-runtime": "npm:react@^19.2.4/jsx-runtime",
+    "react/jsx-dev-runtime": "npm:react@^19.2.4/jsx-dev-runtime",
+    "react-dom": "npm:react-dom@^19.2.4",
+    "react-dom/client": "npm:react-dom@^19.2.4/client",
     "wxt": "npm:wxt",
     "@material/web/": "npm:@material/web@1.0.0/"
   },
@@ -23,6 +29,14 @@
       "scripthost",
       "webworker",
       "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "types": [
+      "npm:@types/react",
+      "npm:@types/react-dom"
     ],
     "checkJs": false,
     "allowUnreachableCode": false,
