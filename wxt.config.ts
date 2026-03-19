@@ -8,9 +8,13 @@ export default defineConfig({
     permissions: [
       'storage',
       'tabs',
+      'notifications',
     ],
     host_permissions: [
       'http://localhost:9000/*',
+      'https://fcmregistrations.googleapis.com/*',
+      'https://firebaseinstallations.googleapis.com/*',
+      'https://www.googleapis.com/*',
       'https://cdn.discordapp.com/*',
       'https://fonts.googleapis.com/*',
     ],

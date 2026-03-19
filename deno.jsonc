@@ -9,12 +9,21 @@
     "react/jsx-dev-runtime": "npm:react@^19.2.4/jsx-dev-runtime",
     "react-dom": "npm:react-dom@^19.2.4",
     "react-dom/client": "npm:react-dom@^19.2.4/client",
+    "firebase/app": "npm:firebase@^12.2.1/app",
+    "firebase/messaging": "npm:firebase@^12.2.1/messaging",
+    "firebase/messaging/sw": "npm:firebase@^12.2.1/messaging/sw",
     "wxt": "npm:wxt",
     "@material/web/": "npm:@material/web@1.0.0/"
   },
   "tasks": {
     "dev": "wxt"
   },
+  "exclude": [
+    ".output",
+    ".vite",
+    ".wxt",
+    "node_modules"
+  ],
   "exports": {},
   "nodeModulesDir": "auto",
   // Compiler Options
@@ -59,6 +68,12 @@
   },
   // Linting Options
   "lint": {
+    "exclude": [
+      ".output",
+      ".vite",
+      ".wxt",
+      "node_modules"
+    ],
     "rules": {
       "tags": [
         "recommended"

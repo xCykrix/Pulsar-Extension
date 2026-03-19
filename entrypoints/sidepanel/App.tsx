@@ -1,15 +1,28 @@
 /** @jsxImportSource react */
 
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
+import { getMessaging, getToken, isSupported, onMessage, type MessagePayload } from 'firebase/messaging';
+import { useEffect, useRef, useState, type ReactElement, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { browser } from 'wxt/browser';
 
+import {
+  getFirebaseMessagingDiagnostics,
+  getFirebaseVapidKey,
+  getFirebaseWebConfig,
+  getNotificationRegisterPath,
+  getNotificationVerifyPath,
+} from '../shared/firebase-config.ts';
+
 const API_BASE = 'http://localhost:9000';
+const VERIFY_POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const VERIFY_BACKOFF_DELAYS_MS = [30_000, 120_000, 600_000] as const;
 const DISCORD_LOGIN_BREAKPOINTS = {
   full: 430,
   compact: 340,
 } as const;
 const TOAST_TIMEOUT_MS = 4200;
+const SIDEPANEL_FCM_LOG_PREFIX = '[Pulsar FCM][sidepanel]';
 
 type LoginButtonMode = 'full' | 'compact' | 'hidden';
 type ToastType = 'info' | 'error';
@@ -23,7 +36,12 @@ interface DiscordUser {
 interface StoredSession {
   discordUser?: DiscordUser;
   sessionToken?: string;
+  fcmToken?: string;
 }
+
+type VerifyNotificationTokenResult =
+  | { ok: true; active: boolean }
+  | { ok: false; statusClass: '4xx' | '5xx' | 'network'; status?: number };
 
 interface AuthStartResponse {
   sessionId?: string;
@@ -80,6 +98,244 @@ export function App(): ReactElement {
       browser.storage.onChanged.removeListener(handleStorageChange);
     };
   }, []);
+
+  useEffect(() => {
+    const diagnostics = getFirebaseMessagingDiagnostics();
+    if (!user) {
+      console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Skipping messaging setup because no user is signed in.`);
+      return undefined;
+    }
+
+    if (!diagnostics.hasConfig) {
+      console.warn(`${SIDEPANEL_FCM_LOG_PREFIX} Firebase Messaging config is incomplete.`, diagnostics);
+      return undefined;
+    }
+
+    let unsubscribeForeground: (() => void) | null = null;
+    let isDisposed = false;
+    const pendingTimers: number[] = [];
+
+    const schedulePeriodicVerify = (): void => {
+      const timerId = globalThis.setTimeout(() => {
+        void (async () => {
+          if (isDisposed) return;
+
+          const currentSession = (await browser.storage.local.get(['sessionToken', 'fcmToken'])) as StoredSession;
+          const { sessionToken: currentSessionToken, fcmToken: currentFcmToken } = currentSession;
+
+          if (!currentSessionToken || !currentFcmToken) return;
+
+          console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Periodic FCM token verification.`);
+
+          const result = await verifyNotificationToken(currentFcmToken, currentSessionToken);
+          if (isDisposed) return;
+
+          if (result.ok) {
+            if (!result.active) {
+              console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Periodic verify: FCM token inactive, re-registering.`);
+              await registerFcmToken(currentFcmToken, currentSessionToken);
+              await browser.storage.local.set({ fcmToken: currentFcmToken });
+            } else {
+              console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Periodic verify: FCM token still active.`);
+            }
+            schedulePeriodicVerify();
+            return;
+          }
+
+          if (result.status === 401) {
+            console.warn(`${SIDEPANEL_FCM_LOG_PREFIX} Periodic verify: auth invalid (4xx), clearing session.`);
+            await browser.storage.local.remove(['sessionToken', 'fcmToken', 'discordUser']);
+            return;
+          }
+
+          console.warn(
+            `${SIDEPANEL_FCM_LOG_PREFIX} Periodic verify: transient failure (${result.statusClass}), will retry at next interval.`,
+          );
+          schedulePeriodicVerify();
+        })();
+      }, VERIFY_POLL_INTERVAL_MS);
+
+      pendingTimers.push(timerId);
+    };
+
+    const scheduleVerifyRetry = (attempt: number): void => {
+      if (attempt >= VERIFY_BACKOFF_DELAYS_MS.length || isDisposed) {
+        return;
+      }
+
+      const timerId = globalThis.setTimeout(() => {
+        void (async () => {
+          if (isDisposed) return;
+
+          const currentSession = (await browser.storage.local.get(['sessionToken', 'fcmToken'])) as StoredSession;
+          const { sessionToken: currentSessionToken, fcmToken: currentFcmToken } = currentSession;
+
+          if (!currentSessionToken || !currentFcmToken) return;
+
+          console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Requesting FCM token verification (retry attempt ${attempt + 1}).`);
+
+          const result = await verifyNotificationToken(currentFcmToken, currentSessionToken);
+          if (isDisposed) return;
+
+          if (result.ok) {
+            if (!result.active) {
+              console.info(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verified inactive on retry, re-registering.`);
+              await registerFcmToken(currentFcmToken, currentSessionToken);
+              await browser.storage.local.set({ fcmToken: currentFcmToken });
+            } else {
+              console.info(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verified active on retry.`);
+            }
+            return;
+          }
+
+          if (result.status === 401) {
+            console.warn(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verification retry: auth invalid (4xx).`);
+            await browser.storage.local.remove(['sessionToken', 'fcmToken', 'discordUser']);
+            return;
+          }
+
+          console.warn(
+            `${SIDEPANEL_FCM_LOG_PREFIX} FCM token verification retry ${attempt + 1}: transient failure (${result.statusClass}).`,
+          );
+          scheduleVerifyRetry(attempt + 1);
+        })();
+      }, VERIFY_BACKOFF_DELAYS_MS[attempt]);
+
+      pendingTimers.push(timerId);
+    };
+
+    const runTokenVerification = async (token: string, sessionToken: string): Promise<boolean> => {
+      console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Requesting FCM token verification.`);
+
+      const verifyResult = await verifyNotificationToken(token, sessionToken);
+      if (isDisposed) {
+        return true;
+      }
+
+      if (verifyResult.ok) {
+        if (verifyResult.active) {
+          console.info(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verified: active.`);
+          return true;
+        }
+        console.info(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verified: inactive, triggering re-registration.`);
+        return false;
+      }
+
+      if (verifyResult.status === 401) {
+        console.warn(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token verification failed: auth invalid (4xx).`);
+        await browser.storage.local.remove(['sessionToken', 'fcmToken', 'discordUser']);
+        isDisposed = true;
+        return true;
+      }
+
+      console.warn(
+        `${SIDEPANEL_FCM_LOG_PREFIX} FCM token verification: transient failure (${verifyResult.statusClass}). Retrying later.`,
+      );
+      scheduleVerifyRetry(0);
+      return true;
+    };
+
+    const setupMessaging = async (): Promise<void> => {
+      try {
+        const canUseMessaging = await isSupported();
+        console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Messaging support check completed.`, { canUseMessaging });
+
+        if (!canUseMessaging || isDisposed) {
+          return;
+        }
+
+        const registration = await globalThis.navigator.serviceWorker.getRegistration();
+        console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Service worker registration lookup completed.`, {
+          hasRegistration: Boolean(registration),
+        });
+
+        if (!registration || isDisposed) {
+          return;
+        }
+
+        const firebaseApp = getOrCreateFirebaseApp();
+        const messaging = getMessaging(firebaseApp);
+        const token = await getToken(messaging, {
+          vapidKey: getFirebaseVapidKey(),
+          serviceWorkerRegistration: registration,
+        });
+
+        console.info(`${SIDEPANEL_FCM_LOG_PREFIX} FCM token request completed.`, {
+          hasToken: Boolean(token),
+          tokenPreview: token ? summarizeToken(token) : null,
+        });
+
+        if (!token || isDisposed) {
+          return;
+        }
+
+        const sessionData = (await browser.storage.local.get(['sessionToken', 'fcmToken'])) as StoredSession;
+        if (sessionData.sessionToken) {
+          const skipRegistration =
+            sessionData.fcmToken === token
+              ? await runTokenVerification(token, sessionData.sessionToken)
+              : false;
+
+          if (isDisposed) {
+            return;
+          }
+
+          if (!skipRegistration) {
+            await registerFcmToken(token, sessionData.sessionToken);
+            await browser.storage.local.set({ fcmToken: token });
+
+            console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Registered FCM token with Pulsar and stored it locally.`, {
+              tokenPreview: summarizeToken(token),
+            });
+          }
+        }
+
+        if (isDisposed) {
+          return;
+        }
+
+        schedulePeriodicVerify();
+
+        unsubscribeForeground = onMessage(messaging, (payload: MessagePayload) => {
+          console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Received foreground payload.`, payload);
+
+          const title = payload.notification?.title ?? payload.data?.title ?? 'Pulsar Notification';
+          const body = payload.notification?.body ?? payload.data?.body ?? 'You have a new message.';
+          showToast(`${title}: ${body}`);
+
+          console.info(`${SIDEPANEL_FCM_LOG_PREFIX} Relaying foreground payload to background worker.`, {
+            title,
+            body,
+          });
+
+          void browser.runtime.sendMessage({
+            type: 'PULSAR/FCM_FOREGROUND_MESSAGE',
+            notification: {
+              title,
+              body,
+            },
+          });
+        });
+      } catch (error) {
+        if (!isDisposed) {
+          console.error(`${SIDEPANEL_FCM_LOG_PREFIX} Failed to initialize Firebase Messaging.`, error);
+          showToast(getMessagingErrorMessage(error), 'error');
+        }
+      }
+    };
+
+    void setupMessaging();
+
+    return () => {
+      isDisposed = true;
+      for (const timerId of pendingTimers) {
+        globalThis.clearTimeout(timerId);
+      }
+      if (unsubscribeForeground) {
+        unsubscribeForeground();
+      }
+    };
+  }, [user]);
 
   useEffect(() => {
     const topAppBar = topAppBarRef.current;
@@ -318,6 +574,69 @@ export function App(): ReactElement {
   }
 }
 
+function getOrCreateFirebaseApp(): FirebaseApp {
+  return getApps()[0] ?? initializeApp(getFirebaseWebConfig());
+}
+
+async function verifyNotificationToken(token: string, sessionToken: string): Promise<VerifyNotificationTokenResult> {
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}${getNotificationVerifyPath()}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({ token }),
+      },
+      8000,
+    );
+
+    if (response.ok) {
+      const data = (await response.json()) as { success?: boolean; active?: boolean };
+      return { ok: true, active: data.active === true };
+    }
+
+    const statusClass = response.status >= 500 ? '5xx' : '4xx';
+    return { ok: false, statusClass, status: response.status };
+  } catch {
+    return { ok: false, statusClass: 'network' };
+  }
+}
+
+async function registerFcmToken(token: string, sessionToken?: string): Promise<void> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  if (sessionToken) {
+    headers.Authorization = `Bearer ${sessionToken}`;
+  }
+
+  const response = await fetchWithTimeout(
+    `${API_BASE}${getNotificationRegisterPath()}`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token }),
+    },
+    8000,
+  );
+
+  if (!response.ok) {
+    throw new Error('Unable to register push notifications with Pulsar.');
+  }
+}
+
+function summarizeToken(token: string): string {
+  if (token.length <= 12) {
+    return token;
+  }
+
+  return `${token.slice(0, 6)}...${token.slice(-6)}`;
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
@@ -345,6 +664,14 @@ function getLoginErrorMessage(error: unknown): string {
   }
 
   return 'Login Failed. Please try again.';
+}
+
+function getMessagingErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Unable to initialize Firebase Messaging.';
 }
 
 function getDiscordAvatarUrl(user: DiscordUser): string {
