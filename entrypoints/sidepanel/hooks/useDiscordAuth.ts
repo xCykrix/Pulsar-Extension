@@ -100,7 +100,7 @@ export function useDiscordAuth(): UseDiscordAuth {
         return;
       }
 
-      // Error path — parse cause from response body
+      // Parse Error Cause
       let cause = '';
       try {
         const errorBody = (await response.json()) as SessionErrorResponse;
