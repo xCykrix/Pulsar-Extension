@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../node_modules/.deno/@wxt-dev+browser@0.1.37/node_modules/@wxt-dev/browser/src/index.mjs", "../../node_modules/.deno/wxt@0.20.18/node_modules/wxt/dist/browser.mjs"],
-  "sourcesContent": ["// #region snippet\nexport const browser = globalThis.browser?.runtime?.id\n  ? globalThis.browser\n  : globalThis.chrome;\n// #endregion snippet\n", "import { browser as browser$1 } from \"@wxt-dev/browser\";\n\n//#region src/browser.ts\n/**\n* Contains the `browser` export which you should use to access the extension APIs in your project:\n* ```ts\n* import { browser } from 'wxt/browser';\n*\n* browser.runtime.onInstalled.addListener(() => {\n*   // ...\n* })\n* ```\n* @module wxt/browser\n*/\nconst browser = browser$1;\n\n//#endregion\nexport { browser };"],
-  "mappings": ";;;AACO,IAAM,UAAU,WAAW,SAAS,SAAS,KAChD,WAAW,UACX,WAAW;;;ACWf,IAAMA,WAAU;",
-  "names": ["browser"]
-}

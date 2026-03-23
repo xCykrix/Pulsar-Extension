@@ -4,6 +4,7 @@
   // Imports
   "imports": {
     "@wxt-dev/module-react": "npm:@wxt-dev/module-react@^1.2.1",
+    "@tailwindcss/postcss": "npm:@tailwindcss/postcss@^4.1.5",
     "react": "npm:react@^19.2.4",
     "react/jsx-runtime": "npm:react@^19.2.4/jsx-runtime",
     "react/jsx-dev-runtime": "npm:react@^19.2.4/jsx-dev-runtime",
@@ -12,11 +13,17 @@
     "firebase/app": "npm:firebase@^12.2.1/app",
     "firebase/messaging": "npm:firebase@^12.2.1/messaging",
     "firebase/messaging/sw": "npm:firebase@^12.2.1/messaging/sw",
+    "autoprefixer": "npm:autoprefixer@^10.4.21",
+    "postcss": "npm:postcss@^8.5.6",
+    "tailwindcss": "npm:tailwindcss@^4.1.5",
+    "daisyui": "npm:daisyui@^5.1.13",
     "wxt": "npm:wxt",
     "@material/web/": "npm:@material/web@1.0.0/"
   },
   "tasks": {
-    "dev": "wxt"
+    "dev": "wxt",
+    "build": "wxt build",
+    "typecheck": "deno check entrypoints/background.ts entrypoints/sidepanel/App.tsx entrypoints/shared/firebase-config.ts"
   },
   "exclude": [
     ".output",

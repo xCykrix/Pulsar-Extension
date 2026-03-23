@@ -8,6 +8,10 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
     },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12",
+      "installTools": "false"
+    },
     "ghcr.io/flexwie/devcontainer-features/op:1": {}
   },
   "customizations": {
@@ -40,22 +44,13 @@
         "fileNestingUpdater.upstreamRepo": "antfu/vscode-file-nesting-config",
         "fileNestingUpdater.upstreamBranch": "main",
         "deno.enable": true,
-        "deno.unstable": true,
+        "deno.unstable": [
+          "tsgo"
+        ],
         "typescript.experimental.useTsgo": true,
         "js/ts.experimental.useTsgo": true,
         "extensions.webWorker": true,
-        "extensions.ignoreRecommendations": true,
-        "github.copilot.chat.reviewSelection.instructions": [
-          {
-            "text": "This dev container includes an up-to-date version of Git, built from source as needed, pre-installed and available on the `PATH`."
-          },
-          {
-            "text": "This dev container includes `deno` pre-installed and available on the `PATH` for Deno/TypeScript development. Do not use Node.js."
-          },
-          {
-            "text": "This workspace is in a dev container running on \"Debian GNU/Linux 12 (bookworm)\". Some of the command line tools available on the `PATH`: `apt`, `dpkg`, `git`, `curl`, `wget`, `ssh`, `scp`, `rsync`, `gpg`, `ps`, `lsof`, `netstat`, `top`, `tree`, `find`, `grep`, `zip`, `unzip`, `tar`, `gzip`, `bzip2`, `xz`"
-          }
-        ]
+        "extensions.ignoreRecommendations": true
       },
       "extensions": [
         // Editor
@@ -67,14 +62,31 @@
         // IntelliCode
         "ms-vsliveshare.vsliveshare",
         "GitHub.copilot-chat"
-      ]
+      ],
+      "mcp": {
+        "servers": {
+          "daisyui": {
+            "type": "stdio",
+            "command": "python3",
+            "args": [
+              "/tmp/daisyui-mcp/mcp_server.py"
+            ]
+          }
+        },
+        "inputs": []
+      }
     }
   },
   "remoteUser": "root",
   "containerUser": "root",
+  "postCreateCommand": {
+    "download-mcp-daisy": "git clone https://github.com/birdseyevue/daisyui-mcp /tmp/daisyui-mcp"
+  },
   "postStartCommand": {
     "safe": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-    "deps_install": "deno install",
-    "tsgo": "npm install -g @typescript/native-preview"
+    "install-mcp-daisy": "pip install -r /tmp/daisyui-mcp/requirements.txt",
+    "update-mcp-daisy": "(cd /tmp/daisyui-mcp && python update_components.py)",
+    "tsgo": "npm install -g @typescript/native-preview",
+    "deps_install": "deno install"
   }
 }
