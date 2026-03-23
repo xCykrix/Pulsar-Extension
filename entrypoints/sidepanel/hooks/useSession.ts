@@ -4,18 +4,22 @@ import type { SessionUser } from '../../shared/oauth-types.ts';
 
 interface UseSession {
   user: SessionUser | null;
+  sessionToken: string | null;
   isLoaded: boolean;
   logout: () => void;
 }
 
 export function useSession(): UseSession {
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    void browser.storage.local.get(['user']).then((result) => {
+    void browser.storage.local.get(['user', 'sessionToken']).then((result) => {
       const stored = (result as { user?: SessionUser }).user ?? null;
+      const token = (result as { sessionToken?: string }).sessionToken ?? null;
       setUser(stored);
+      setSessionToken(token);
       setIsLoaded(true);
     });
 
@@ -25,6 +29,10 @@ export function useSession(): UseSession {
       if ('user' in changes) {
         const next = changes['user']?.newValue ?? null;
         setUser(next !== null ? (next as SessionUser) : null);
+      }
+      if ('sessionToken' in changes) {
+        const nextToken = changes['sessionToken']?.newValue ?? null;
+        setSessionToken(nextToken !== null ? (nextToken as string) : null);
       }
     };
 
@@ -38,5 +46,5 @@ export function useSession(): UseSession {
     void browser.storage.local.remove(['user', 'sessionToken']);
   };
 
-  return { user, isLoaded, logout };
+  return { user, sessionToken, isLoaded, logout };
 }

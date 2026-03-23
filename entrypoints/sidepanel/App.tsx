@@ -1,12 +1,107 @@
 /** @jsxImportSource react */
 
-import type { ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { browser } from 'wxt/browser';
+import { getRemoteConfigValue } from '../shared/firebase-config.ts';
 import { useDiscordAuth } from './hooks/useDiscordAuth.ts';
+import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 import { useSession } from './hooks/useSession.ts';
+
+interface SidepanelFcmMessage {
+  type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
+  notification: {
+    title?: string;
+    body?: string;
+  };
+  sentAtMs?: number;
+  receivedAtMs?: number;
+}
 
 export function App(): ReactElement {
   const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth();
-  const { user, logout } = useSession();
+  const { user, sessionToken, logout } = useSession();
+  const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
+  const [lastDataAt, setLastDataAt] = useState<number | null>(null);
+  const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | null>(null);
+  const [secondsSinceData, setSecondsSinceData] = useState<number>(0);
+  const [remoteConfigQueueValue, setRemoteConfigQueueValue] = useState<string>('Loading...');
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getRemoteConfigValue('POKEMON_CENTER_QUEUE', 'Unavailable').then((value) => {
+      if (!cancelled) {
+        setRemoteConfigQueueValue(value);
+      }
+    }).catch((error: unknown) => {
+      console.error('[Pulsar] Failed to fetch remote config test value.', error);
+      if (!cancelled) {
+        setRemoteConfigQueueValue('Unavailable');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFcmMessage = (message: unknown): void => {
+      if (!isSidepanelFcmMessage(message)) {
+        return;
+      }
+
+      const title = message.notification.title ?? 'FCM Message Received';
+      const body = message.notification.body ?? 'A new push payload arrived.';
+      const receivedAt = message.receivedAtMs ?? Date.now();
+
+      if (message.sentAtMs !== undefined) {
+        setDeliveryLatencyMs(Math.max(0, receivedAt - message.sentAtMs));
+      }
+      else {
+        setDeliveryLatencyMs(null);
+      }
+
+      setLastDataAt(receivedAt);
+      setFcmToast({ title, body });
+      if (toastTimeoutRef.current !== null) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      toastTimeoutRef.current = setTimeout(() => {
+        setFcmToast(null);
+        toastTimeoutRef.current = null;
+      }, 5000);
+    };
+
+    browser.runtime.onMessage.addListener(handleFcmMessage);
+
+    return () => {
+      browser.runtime.onMessage.removeListener(handleFcmMessage);
+      if (toastTimeoutRef.current !== null) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (lastDataAt === null) {
+      setSecondsSinceData(0);
+      return;
+    }
+
+    setSecondsSinceData(Math.floor((Date.now() - lastDataAt) / 1000));
+    const intervalId = setInterval(() => {
+      setSecondsSinceData(Math.floor((Date.now() - lastDataAt) / 1000));
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [lastDataAt]);
+
+  useFirebaseTokenRegistration(sessionToken);
 
   return (
     <div className="min-h-screen p-4">
@@ -20,6 +115,20 @@ export function App(): ReactElement {
             </svg>
             <span className="text-sm">{authError}</span>
             <button type="button" className="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={dismissAuthError}>\u{2715}</button>
+          </div>
+        </div>
+      )}
+      {fcmToast !== null && (
+        <div className="toast toast-bottom toast-end z-40 w-full max-w-xs">
+          <div role="status" className="alert alert-success shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{fcmToast.title}</p>
+              <p className="truncate text-xs opacity-80">{fcmToast.body}</p>
+            </div>
           </div>
         </div>
       )}
@@ -89,9 +198,25 @@ export function App(): ReactElement {
           <div className="card-body text-center">
             <h1 className="text-2xl font-bold">Hello world</h1>
             <p className="text-sm opacity-70">Your sidepanel is ready for the next step.</p>
+            <div className="mt-4 border-t border-base-300 pt-3 text-xs opacity-60">
+              Seconds since data: {lastDataAt === null ? 'Waiting for data' : secondsSinceData}
+            </div>
+            <div className="mt-1 text-xs opacity-60">
+              FCM sent to received: {deliveryLatencyMs === null ? 'Unavailable (no sent timestamp in payload)' : `${deliveryLatencyMs} ms`}
+            </div>
+            <div className="mt-1 text-xs opacity-60">
+              Remote Config POKEMON_CENTER_QUEUE: {remoteConfigQueueValue}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function isSidepanelFcmMessage(message: unknown): message is SidepanelFcmMessage {
+  if (message === null || typeof message !== 'object') {
+    return false;
+  }
+  return (message as { type?: string }).type === 'PULSAR/FCM_SIDEPANEL_MESSAGE';
 }

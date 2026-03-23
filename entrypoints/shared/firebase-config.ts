@@ -1,3 +1,6 @@
+import { getApps, initializeApp } from 'firebase/app';
+import { fetchAndActivate, getRemoteConfig, getValue, isSupported as isRemoteConfigSupported, type RemoteConfig } from 'firebase/remote-config';
+
 interface FirebaseWebConfig {
   apiKey: string;
   authDomain: string;
@@ -42,11 +45,31 @@ export function getFirebaseVapidKey(): string {
 }
 
 export function getNotificationRegisterPath(): string {
-  return env.WXT_NOTIFICATION_REGISTER_PATH ?? '/notifications/register';
+  return env.WXT_NOTIFICATION_REGISTER_PATH ?? '/notification/register';
 }
 
-export function getNotificationVerifyPath(): string {
-  return env.WXT_NOTIFICATION_VERIFY_PATH ?? '/notifications/verify';
+let remoteConfigClient: RemoteConfig | null = null;
+
+export async function getRemoteConfigValue(key: string, fallback = ''): Promise<string> {
+  const normalizedKey = key.trim();
+  if (normalizedKey.length === 0) {
+    return fallback;
+  }
+
+  const remoteConfig = await getRemoteConfigClient();
+  if (remoteConfig === null) {
+    return fallback;
+  }
+
+  try {
+    await fetchAndActivate(remoteConfig);
+  }
+  catch (error) {
+    console.warn('[Pulsar] Failed to fetch/activate Firebase Remote Config.', error);
+  }
+
+  const value = getValue(remoteConfig, normalizedKey).asString();
+  return value.length > 0 ? value : fallback;
 }
 
 export function hasFirebaseMessagingConfig(): boolean {
@@ -72,4 +95,28 @@ export function getFirebaseMessagingDiagnostics(): FirebaseMessagingDiagnostics 
     hasConfig: missingKeys.length === 0,
     missingKeys,
   };
+}
+
+async function getRemoteConfigClient(): Promise<RemoteConfig | null> {
+  if (remoteConfigClient !== null) {
+    return remoteConfigClient;
+  }
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const supported = await isRemoteConfigSupported().catch(() => false);
+  if (!supported) {
+    return null;
+  }
+
+  const app = getApps()[0] ?? initializeApp(getFirebaseWebConfig());
+  remoteConfigClient = getRemoteConfig(app);
+  remoteConfigClient.settings = {
+    fetchTimeoutMillis: 10_000,
+    minimumFetchIntervalMillis: 60_000,
+  };
+
+  return remoteConfigClient;
 }
