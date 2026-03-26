@@ -20,6 +20,7 @@ interface SidepanelFcmMessage {
 export function App(): ReactElement {
   const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth();
   const { user, sessionToken, logout } = useSession();
+  
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
   const [lastDataAt, setLastDataAt] = useState<number | null>(null);
