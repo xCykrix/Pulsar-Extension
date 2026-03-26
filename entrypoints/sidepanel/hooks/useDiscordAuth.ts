@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { getApiBase } from '../../shared/api-config.ts';
-import { MAX_POLL_DURATION_MS, POLL_INTERVAL_MS, SOFT_FAIL_LIMIT } from '../../shared/oauth-constants.ts';
-import type { LoginResponse, SessionErrorResponse, SessionSuccessResponse } from '../../shared/oauth-types.ts';
+import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/const.ts';
 
 interface UseDiscordAuth {
   isLoggingIn: boolean;
@@ -14,6 +12,7 @@ interface UseDiscordAuth {
 export function useDiscordAuth(): UseDiscordAuth {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStartRef = useRef<number | null>(null);
   const oauthTabIdRef = useRef<number | null>(null);
@@ -75,7 +74,7 @@ export function useDiscordAuth(): UseDiscordAuth {
   const pollSession = async (sessionId: string, failCount: number): Promise<void> => {
     if (
       pollStartRef.current !== null
-      && Date.now() - pollStartRef.current >= MAX_POLL_DURATION_MS
+      && Date.now() - pollStartRef.current >= OAUTH_POLL_TTL
     ) {
       console.error('[Pulsar] Session polling timed out after 120s');
       await stopPolling('Authentication timed out. Please try again.');
@@ -83,13 +82,12 @@ export function useDiscordAuth(): UseDiscordAuth {
     }
 
     try {
-      const url = `${getApiBase()}/oauth/session?sessionId=${encodeURIComponent(sessionId)}`;
-      const response = await fetch(url);
+      const response = await fetch(getEndpoint(`/oauth/session?sessionId=${encodeURIComponent(sessionId)}`));
 
       if (response.status === 202) {
         pollTimeoutRef.current = setTimeout(() => {
           void pollSession(sessionId, failCount);
-        }, POLL_INTERVAL_MS);
+        }, OAUTH_POLL_MS);
         return;
       }
 
@@ -112,9 +110,9 @@ export function useDiscordAuth(): UseDiscordAuth {
 
       // 400 SessionIdMissing is immediately fatal (threshold 1)
       const isFatal = response.status === 400 && cause === 'oAuthSession:SessionIdMissing';
-      const nextFailCount = isFatal ? SOFT_FAIL_LIMIT : failCount + 1;
+      const nextFailCount = isFatal ? OAUTH_POLL_FAIL_COUNT : failCount + 1;
 
-      if (nextFailCount >= SOFT_FAIL_LIMIT) {
+      if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
         console.error(`[Pulsar] Session polling stopped: HTTP ${response.status} cause="${cause}"`);
         await stopPolling('Authentication failed. Please try again.');
         return;
@@ -122,18 +120,18 @@ export function useDiscordAuth(): UseDiscordAuth {
 
       pollTimeoutRef.current = setTimeout(() => {
         void pollSession(sessionId, nextFailCount);
-      }, POLL_INTERVAL_MS);
+      }, OAUTH_POLL_MS);
     }
     catch (error) {
       const nextFailCount = failCount + 1;
-      if (nextFailCount >= SOFT_FAIL_LIMIT) {
+      if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
         console.error('[Pulsar] Session polling network error:', error);
         await stopPolling('Authentication failed. Please try again.');
         return;
       }
       pollTimeoutRef.current = setTimeout(() => {
         void pollSession(sessionId, nextFailCount);
-      }, POLL_INTERVAL_MS);
+      }, OAUTH_POLL_MS);
     }
   };
 
@@ -141,7 +139,7 @@ export function useDiscordAuth(): UseDiscordAuth {
     setIsLoggingIn(true);
     void (async () => {
       try {
-        const response = await fetch(`${getApiBase()}/oauth/login`);
+        const response = await fetch(getEndpoint('/oauth/login'));
         if (!response.ok) {
           throw new Error(`Login request failed with status ${response.status}`);
         }
@@ -160,4 +158,25 @@ export function useDiscordAuth(): UseDiscordAuth {
   };
 
   return { isLoggingIn, authError, handleDiscordLogin, dismissAuthError };
+}
+
+export interface LoginResponse {
+  sessionId: string;
+  redirect: string;
+}
+
+export interface SessionUser {
+  id: string;
+  username: string;
+  email: string;
+  avatar: string;
+}
+
+export interface SessionSuccessResponse {
+  user: SessionUser;
+  sessionToken: string;
+}
+
+export interface SessionErrorResponse {
+  cause?: string;
 }

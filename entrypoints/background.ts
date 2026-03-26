@@ -1,9 +1,9 @@
-import { getApps, initializeApp } from 'firebase/app';
-import { experimentalSetDeliveryMetricsExportedToBigQueryEnabled, getMessaging, isSupported, type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw';
+import { type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw';
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { getFirebaseMessagingDiagnostics, getFirebaseWebConfig } from './shared/firebase-config.ts';
+import { getGuildOptions, refreshAccessCache } from './shared/access-cache.ts';
+import { Firebase } from './shared/firebase.ts';
 
 const FALLBACK_NOTIFICATION_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7f7p4AAAAASUVORK5CYII=';
 const BACKGROUND_FCM_LOG_PREFIX = '[Pulsar FCM][background]';
@@ -36,7 +36,22 @@ export default defineBackground(() => {
     console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to initialize Firebase Messaging.`, error);
   });
 
-  browser.runtime.onMessage.addListener((message: unknown) => {
+  // Fetch and index access data on startup
+  void refreshAccessCache().then(() => {
+    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Access cache fetched on startup.`, getGuildOptions());
+  }).catch((error: unknown) => {
+    console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to fetch access data on startup.`, error);
+  });
+
+  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+    // Sidepanel requests guild options
+    if (typeof message === 'object' && message !== null && (message as Record<string, unknown>).type === 'GET_GUILD_OPTIONS') {
+      const guildOptions = getGuildOptions();
+      console.info(`${BACKGROUND_FCM_LOG_PREFIX} GET_GUILD_OPTIONS requested. Returning:`, guildOptions);
+      sendResponse({ guildOptions });
+      return true; // async response
+    }
+
     if (!isForegroundNotificationMessage(message)) {
       return false;
     }
@@ -53,23 +68,7 @@ export default defineBackground(() => {
 });
 
 async function initializeFirebaseMessaging(): Promise<void> {
-  const diagnostics = getFirebaseMessagingDiagnostics();
-  if (!diagnostics.hasConfig) {
-    console.warn(`${BACKGROUND_FCM_LOG_PREFIX} Firebase Messaging config is incomplete.`, diagnostics);
-    return;
-  }
-
-  const supported = await isSupported();
-  if (!supported) {
-    console.warn(`${BACKGROUND_FCM_LOG_PREFIX} Firebase Messaging is not supported in the background context.`);
-    return;
-  }
-
-  const firebaseApp = getApps()[0] ?? initializeApp(getFirebaseWebConfig());
-  const messaging = getMessaging(firebaseApp);
-  experimentalSetDeliveryMetricsExportedToBigQueryEnabled(messaging, true);
-
-  console.info(`${BACKGROUND_FCM_LOG_PREFIX} Firebase Messaging initialized. Waiting for background payloads.`);
+  const messaging = await Firebase.getFirebaseMessagingServiceWorker();
 
   onBackgroundMessage(messaging, (payload: MessagePayload) => {
     console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received background payload.`, payload);
@@ -94,7 +93,7 @@ async function relayFcmMessageToSidepanel(title: string, body: string, sentAtMs?
     await browser.runtime.sendMessage(message);
   }
   catch {
-    // Sidepanel may not be open; ignore delivery errors.
+    // It's possible the sidepanel isn't open, so this may fail. That's okay - the message will be delivered if/when the sidepanel opens.
   }
 }
 
@@ -114,6 +113,7 @@ async function createExtensionNotification(title: string, message: string): Prom
   });
 }
 
+// Helper Functions. Move these? Dunno.
 function isForegroundNotificationMessage(message: unknown): message is ForegroundNotificationMessage {
   if (!message || typeof message !== 'object') {
     return false;
