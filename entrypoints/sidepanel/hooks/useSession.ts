@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { SessionUser } from './useDiscordAuth.ts';
+import type { SessionUser } from './useDiscordAuth.ts';
 
 interface UseSession {
   user: SessionUser | null;

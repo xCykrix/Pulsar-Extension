@@ -2,7 +2,7 @@ import { type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw'
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { getGuildOptions, refreshAccessCache } from './shared/access-cache.ts';
+import { AccessCache } from './shared/accessCache.ts';
 import { Firebase } from './shared/firebase.ts';
 
 const FALLBACK_NOTIFICATION_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7f7p4AAAAASUVORK5CYII=';
@@ -37,32 +37,42 @@ export default defineBackground(() => {
   });
 
   // Fetch and index access data on startup
-  void refreshAccessCache().then(() => {
-    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Access cache fetched on startup.`, getGuildOptions());
-  }).catch((error: unknown) => {
-    console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to fetch access data on startup.`, error);
+  void AccessCache.getLatestData().then((v) => {
+    if (v.lastUpdateSuccessful) {
+      console.info(`${BACKGROUND_FCM_LOG_PREFIX} Synced Pulsar AccessCache getLatestData().`, v);
+    }
+    else {
+      console.warn(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load AccessCache getLatestData() but maintained stale structure.`, v);
+    }
+  }).catch((err) => {
+    console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load AccessCache getLatestData() due to thrown error.`, err);
   });
 
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-    // Sidepanel requests guild options
-    if (typeof message === 'object' && message !== null && (message as Record<string, unknown>).type === 'GET_GUILD_OPTIONS') {
-      const guildOptions = getGuildOptions();
-      console.info(`${BACKGROUND_FCM_LOG_PREFIX} GET_GUILD_OPTIONS requested. Returning:`, guildOptions);
-      sendResponse({ guildOptions });
+  browser.runtime.onMessage.addListener(async (message: unknown, _sender, sendResponse) => {
+    // OP: GET_ACCESS_CACHE. Side Panel Data Requester.
+    if (typeof message === 'object' && message !== null && (message as Record<string, unknown>).type === 'GET_ACCESS_CACHE') {
+      const getLatestData = await AccessCache.getLatestData();
+      console.info(`${BACKGROUND_FCM_LOG_PREFIX} GET_ACCESS_CACHE requested from sidepanel.`, getLatestData);
+      void sendResponse({
+        guildsById: getLatestData.guildsById,
+        channelsByGuild: getLatestData.channelsByGuild,
+        categoriesByGuild: getLatestData.categoriesByGuild,
+      });
       return true; // async response
     }
 
+    // Fallback to FCM Messenges.
     if (!isForegroundNotificationMessage(message)) {
       return false;
     }
+    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received Foreground Message Proxied.`, message);
 
-    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received foreground relay message.`, message);
-
+    // Process FCM Message to Relay Proxies.
     const title = message.notification?.title ?? 'Pulsar Notification';
     const body = message.notification?.body ?? 'You have a new message.';
     const sentAtMs = getSentAtMs(message.data);
-    void relayFcmMessageToSidepanel(title, body, sentAtMs);
-    void createExtensionNotification(title, body);
+    void dispatchFCMToSidepanel(title, body, sentAtMs);
+    void dispatchFCMToNotification(title, body);
     return false;
   });
 });
@@ -71,17 +81,17 @@ async function initializeFirebaseMessaging(): Promise<void> {
   const messaging = await Firebase.getFirebaseMessagingServiceWorker();
 
   onBackgroundMessage(messaging, (payload: MessagePayload) => {
-    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received background payload.`, payload);
+    console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received Background Message Proxied.`, payload);
 
     const title = payload.notification?.title ?? payload.data?.title ?? 'Pulsar Notification';
     const body = payload.notification?.body ?? payload.data?.body ?? 'You have a new message.';
     const sentAtMs = getSentAtMs(payload.data);
-    void relayFcmMessageToSidepanel(title, body, sentAtMs);
-    void createExtensionNotification(title, body);
+    void dispatchFCMToSidepanel(title, body, sentAtMs);
+    void dispatchFCMToNotification(title, body);
   });
 }
 
-async function relayFcmMessageToSidepanel(title: string, body: string, sentAtMs?: number): Promise<void> {
+async function dispatchFCMToSidepanel(title: string, body: string, sentAtMs?: number): Promise<void> {
   const message: SidepanelNotificationMessage = {
     type: 'PULSAR/FCM_SIDEPANEL_MESSAGE',
     notification: { title, body },
@@ -97,7 +107,7 @@ async function relayFcmMessageToSidepanel(title: string, body: string, sentAtMs?
   }
 }
 
-async function createExtensionNotification(title: string, message: string): Promise<void> {
+async function dispatchFCMToNotification(title: string, message: string): Promise<void> {
   if (!browser.notifications) {
     console.warn(`${BACKGROUND_FCM_LOG_PREFIX} Notifications API is unavailable.`, { title, message });
     return;
@@ -128,7 +138,6 @@ function getSentAtMs(data?: Record<string, string>): number | undefined {
   }
 
   const parsed = Number(data.timestamp);
-  console.info('parsed', parsed, Number.isFinite(parsed));
   if (!Number.isFinite(parsed)) {
     return undefined;
   }

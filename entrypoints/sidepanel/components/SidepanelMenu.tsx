@@ -2,6 +2,7 @@
 
 import { type ReactElement, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { UserAccess } from '../../shared/accessCache.ts';
 
 interface SidepanelMenuProps {
   isOpen: boolean;
@@ -9,27 +10,24 @@ interface SidepanelMenuProps {
   onCreateGroup?: () => void;
 }
 
-interface GuildOption {
-  guildId: string;
-  guildName: string;
-}
-
 export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuProps): ReactElement {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [selectedGuildId, setSelectedGuildId] = useState<string>('');
-  const [guildOptions, setGuildOptions] = useState<GuildOption[]>([]);
+  const [userAccess, setUserAccess] = useState<UserAccess[]>([]);
 
   useEffect(() => {
     if (!showCreateGroupModal) {
       return;
     }
 
-    browser.runtime.sendMessage({ type: 'GET_GUILD_OPTIONS' }).then((resp) => {
-      if (resp && Array.isArray(resp.guildOptions)) {
-        setGuildOptions(resp.guildOptions as GuildOption[]);
+    browser.runtime.sendMessage({ type: 'GET_ACCESS_CACHE' }).then((resp) => {
+      console.info('resp', resp);
+      if (resp && resp.guildsById) {
+        setUserAccess(Object.values(resp.guildsById) as UserAccess[]);
+        console.info('ua', userAccess);
       }
       else {
-        setGuildOptions([]);
+        setUserAccess([]);
       }
     });
   }, [showCreateGroupModal]);
@@ -81,7 +79,7 @@ export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuP
               }}
             >
               <option value='' disabled>Select a guild...</option>
-              {guildOptions.map((guild) => <option key={guild.guildId} value={guild.guildId}>{guild.guildName}</option>)}
+              {userAccess.map((guild) => <option key={guild.guildId} value={guild.guildId}>{guild.guildName}</option>)}
             </select>
           </label>
           <div className='flex justify-end gap-2'>
