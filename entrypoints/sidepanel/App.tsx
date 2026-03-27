@@ -3,6 +3,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 // import { getGuildOptions } from '../shared/access-cache.ts';
+import { SidepanelMenu } from './components/SidepanelMenu.tsx';
 import { useDiscordAuth } from './hooks/useDiscordAuth.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 import { useSession } from './hooks/useSession.ts';
@@ -20,32 +21,13 @@ interface SidepanelFcmMessage {
 export function App(): ReactElement {
   const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth();
   const { user, sessionToken, logout } = useSession();
-  
+
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
   const [lastDataAt, setLastDataAt] = useState<number | null>(null);
   const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | null>(null);
   const [secondsSinceData, setSecondsSinceData] = useState<number>(0);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Modal state
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [selectedGuildId, setSelectedGuildId] = useState<string>('');
-  const [guildOptions, setGuildOptions] = useState<Array<{ guildId: string; guildName: string }>>([]);
-
-  // Load guild options from background when modal opens
-  useEffect(() => {
-    if (showCreateGroupModal) {
-      browser.runtime.sendMessage({ type: 'GET_GUILD_OPTIONS' }).then((resp) => {
-        if (resp && Array.isArray(resp.guildOptions)) {
-          setGuildOptions(resp.guildOptions);
-        }
-        else {
-          setGuildOptions([]);
-        }
-      });
-    }
-  }, [showCreateGroupModal]);
 
   useEffect(() => {
     const handleFcmMessage = (message: unknown): void => {
@@ -242,60 +224,12 @@ export function App(): ReactElement {
             </div>
           </div>
 
-          {isMenuExpanded && (
-            <button
-              type='button'
-              className='absolute inset-0 z-20 cursor-default rounded-box bg-base-content/25'
-              aria-label='Close menu overlay'
-              onClick={() => {
-                setIsMenuExpanded(false);
-              }}
-            />
-          )}
-
-          <aside
-            id='sidepanel-popout-menu'
-            className={`absolute left-0 top-0 z-30 flex h-full w-48 flex-col rounded-box border border-base-300 bg-base-100 p-3 shadow-2xl transition-all duration-200 ${isMenuExpanded ? 'translate-x-0 opacity-100' : '-translate-x-4 opacity-0 pointer-events-none'}`}
-            aria-label='Navigation menu'
-          >
-            <p className='mb-3 px-2 text-[10px] font-semibold uppercase tracking-[0.2em] opacity-40'>Menu</p>
-            <button
-              type='button'
-              className='btn btn-ghost btn-sm justify-start gap-3 px-2 normal-case'
-              onClick={() => setShowCreateGroupModal(true)}
-            >
-              <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4 shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' aria-hidden='true'>
-                <path d='M12 5v14' />
-                <path d='M5 12h14' />
-              </svg>
-              <span className='truncate text-sm'>Create Group</span>
-            </button>
-          </aside>
-        </div>
-
-        {/* Create Group Modal */}
-        {/* DaisyUI modal pattern */}
-        <input type='checkbox' className='modal-toggle' checked={showCreateGroupModal} readOnly tabIndex={-1} />
-        <div className={`modal ${showCreateGroupModal ? 'modal-open' : ''}`}>
-          <div className='modal-box w-full max-w-md bg-base-100 p-6 rounded-box shadow-xl'>
-            <h3 className='font-bold text-lg mb-4'>Create Group</h3>
-            <label className='form-control w-full mb-4'>
-              <span className='label-text mb-1'>Select Guild</span>
-              <select
-                className='select select-bordered w-full'
-                value={selectedGuildId}
-                onChange={(e) => setSelectedGuildId(e.target.value)}
-              >
-                <option value='' disabled>Select a guild…</option>
-                {guildOptions.map((guild) => <option key={guild.guildId} value={guild.guildId}>{guild.guildName}</option>)}
-              </select>
-            </label>
-            <div className='flex justify-end gap-2'>
-              <button className='btn btn-ghost' type='button' onClick={() => setShowCreateGroupModal(false)}>Cancel</button>
-              <button className='btn btn-primary' type='button' disabled={!selectedGuildId} onClick={() => setShowCreateGroupModal(false)}>Continue</button>
-            </div>
-          </div>
-          <label className='modal-backdrop' onClick={() => setShowCreateGroupModal(false)} />
+          <SidepanelMenu
+            isOpen={isMenuExpanded}
+            onClose={() => {
+              setIsMenuExpanded(false);
+            }}
+          />
         </div>
 
         <footer className='mt-auto border-t border-base-300/60 px-1 pt-3 text-left text-[10px] leading-relaxed opacity-50'>
