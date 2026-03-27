@@ -42,10 +42,10 @@
       "deno.worker",
       "deno.unstable",
       "decorators",
+      "dom",
       "dom.asynciterable",
       "scripthost",
       "webworker",
-      "dom",
       "dom.iterable",
       "esnext"
     ],

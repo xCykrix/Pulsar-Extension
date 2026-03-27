@@ -1,5 +1,3 @@
-/** @jsxImportSource react */
-
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { UserAccess } from '../../shared/accessCache.ts';
@@ -84,8 +82,6 @@ export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuP
   const guildDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const isValidTimeOrNull = (value: string | null): boolean => value === null || TWELVE_HOUR_TIME_REGEX.test(value);
-  const trimmedGroupName = groupName.trim();
-  const isGroupNameValid = trimmedGroupName.length >= 1 && trimmedGroupName.length <= 100;
   const hasStartTime = startTime !== null;
   const hasEndTime = endTime !== null;
   const isTimePairComplete = hasStartTime === hasEndTime;
@@ -109,12 +105,15 @@ export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuP
   );
   const isGroupNameValidationError = groupNameValidationMessage !== '';
 
+  // Effect to Load Access Cache to Foreground from Background Script
   useEffect(() => {
+    // Prevent Run and Cleanup State on Close
     if (!showCreateGroupModal) {
       setIsGuildDropdownOpen(false);
       return;
     }
 
+    // Call 'GET_ACCESS_CACHE' to Background Script to Get Access Cache for Guild List
     browser.runtime.sendMessage({ type: 'GET_ACCESS_CACHE' }).then((resp) => {
       if (resp && resp.guildsById) {
         setUserAccess(Object.values(resp.guildsById) as UserAccess[]);
@@ -125,6 +124,7 @@ export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuP
     });
   }, [showCreateGroupModal]);
 
+  // Effect to Handle Click Outside of Guild Dropdown to Close Dropdown
   useEffect(() => {
     if (!isGuildDropdownOpen) {
       return;
@@ -136,9 +136,9 @@ export function SidepanelMenu({ isOpen, onClose, onCreateGroup }: SidepanelMenuP
       }
     };
 
-    document.addEventListener('mousedown', handleMouseDownOutside);
+    globalThis.document.addEventListener('mousedown', handleMouseDownOutside);
     return () => {
-      document.removeEventListener('mousedown', handleMouseDownOutside);
+      globalThis.document.removeEventListener('mousedown', handleMouseDownOutside);
     };
   }, [isGuildDropdownOpen]);
 
