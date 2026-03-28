@@ -17,15 +17,10 @@ export function useFirebaseTokenRegistration(sessionToken: string | null): UseFi
       return;
     }
 
-    let cancelled = false;
-    let isRegisteringInFlight = false;
-
     const run = async (): Promise<void> => {
-      if (isRegisteringInFlight || cancelled) {
+      if (isRegistering) {
         return;
       }
-      isRegisteringInFlight = true;
-
       setIsRegistering(true);
       setRegistrationError(null);
 
@@ -35,7 +30,6 @@ export function useFirebaseTokenRegistration(sessionToken: string | null): UseFi
       });
 
       setIsRegistering(false);
-      isRegisteringInFlight = false;
     };
 
     void run();
@@ -44,7 +38,6 @@ export function useFirebaseTokenRegistration(sessionToken: string | null): UseFi
     }, FCM_REGISTER_POLL_RATE);
 
     return () => {
-      cancelled = true;
       clearInterval(intervalId);
     };
   }, [sessionToken]);

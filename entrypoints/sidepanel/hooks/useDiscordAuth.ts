@@ -12,7 +12,7 @@ interface UseDiscordAuth {
 export function useDiscordAuth(): UseDiscordAuth {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  
+
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStartRef = useRef<number | null>(null);
   const oauthTabIdRef = useRef<number | null>(null);
