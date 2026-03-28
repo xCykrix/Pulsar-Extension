@@ -149,28 +149,3 @@ export class Firebase {
     return await navigator.serviceWorker.ready;
   }
 }
-
-// export function hasFirebaseMessagingConfig(): boolean {
-//   return getFirebaseMessagingDiagnostics().hasConfig;
-// }
-
-// export function getFirebaseMessagingDiagnostics(): FirebaseMessagingDiagnostics {
-//   const firebaseConfig = getFirebaseWebConfig();
-//   const configValues: Record<FirebaseMessagingEnvKey, string> = {
-//     apiKey: firebaseConfig.apiKey,
-//     authDomain: firebaseConfig.authDomain,
-//     projectId: firebaseConfig.projectId,
-//     storageBucket: firebaseConfig.storageBucket,
-//     messagingSenderId: firebaseConfig.messagingSenderId,
-//     appId: firebaseConfig.appId,
-//     vapidKey: getFirebaseVapidKey(),
-//   };
-//   const missingKeys = (Object.entries(configValues) as Array<[FirebaseMessagingEnvKey, string]>)
-//     .filter(([, value]: [FirebaseMessagingEnvKey, string]) => value.trim().length === 0)
-//     .map(([key]: [FirebaseMessagingEnvKey, string]) => FIREBASE_MESSAGING_ENV_MAP[key]);
-
-//   return {
-//     hasConfig: missingKeys.length === 0,
-//     missingKeys,
-//   };
-// }

@@ -2,7 +2,8 @@ import { type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw'
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { AccessCache } from './shared/accessCache.ts';
+import { AccessCache } from './shared/cache.ts';
+import { getEndpoint } from './shared/const.ts';
 import { Firebase } from './shared/firebase.ts';
 
 const FALLBACK_NOTIFICATION_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7f7p4AAAAASUVORK5CYII=';
@@ -28,37 +29,67 @@ interface SidepanelNotificationMessage {
 }
 
 export default defineBackground(() => {
-  console.info(`${BACKGROUND_FCM_LOG_PREFIX} Background service worker started.`);
-
+  console.info(`${BACKGROUND_FCM_LOG_PREFIX} Background Service Worker Initialized.`);
   void browser.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true });
 
+  // Setup Firebase
   void initializeFirebaseMessaging().catch((error: unknown) => {
     console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to initialize Firebase Messaging.`, error);
   });
 
-  // Fetch and index access data on startup
-  void AccessCache.getLatestData().then((v) => {
-    if (v.lastUpdateSuccessful) {
-      console.info(`${BACKGROUND_FCM_LOG_PREFIX} Synced Pulsar AccessCache getLatestData().`, v);
+  // Polling: Status Check in Background and Transmit to UI. Used to provide a physical status indication.
+  setInterval(async () => {
+    const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
+    const statusEndpoint = getEndpoint('/notification/status');
+
+    if (!sessionToken) {
+      browser.runtime.sendMessage({
+        type: 'PULSAR/STATUS_CHECK',
+        status: 'PENDING',
+      });
+      return;
+    }
+
+    const signal = AbortSignal.timeout(1000);
+    const response = await fetch(statusEndpoint, {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+      signal,
+    }).catch(() => null);
+
+    if (response?.ok && response.status === 200) {
+      browser.runtime.sendMessage({
+        type: 'PULSAR/STATUS_CHECK',
+        status: 'OK',
+      });
+    }
+    else if (response?.ok && response.status === 401) {
+      browser.runtime.sendMessage({
+        type: 'PULSAR/STATUS_CHECK',
+        status: 'PENDING',
+      });
     }
     else {
-      console.warn(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load AccessCache getLatestData() but maintained stale structure.`, v);
+      browser.runtime.sendMessage({
+        type: 'PULSAR/STATUS_CHECK',
+        status: 'ERROR',
+      });
     }
-  }).catch((err) => {
-    console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load AccessCache getLatestData() due to thrown error.`, err);
-  });
+  }, 1000);
 
-  browser.runtime.onMessage.addListener(async (message: unknown, _sender, sendResponse) => {
+  // Listen for Foreground Messages to Service Worker.
+  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     // OP: GET_ACCESS_CACHE. Side Panel Data Requester.
     if (typeof message === 'object' && message !== null && (message as Record<string, unknown>).type === 'GET_ACCESS_CACHE') {
-      const getLatestData = await AccessCache.getLatestData();
-      console.info(`${BACKGROUND_FCM_LOG_PREFIX} GET_ACCESS_CACHE requested from sidepanel.`, getLatestData);
-      void sendResponse({
-        guildsById: getLatestData.guildsById,
-        channelsByGuild: getLatestData.channelsByGuild,
-        categoriesByGuild: getLatestData.categoriesByGuild,
+      (async () => {
+        const getLatestData = await AccessCache.getLatestData();
+        console.info(`${BACKGROUND_FCM_LOG_PREFIX} GET_ACCESS_CACHE requested from sidepanel.`, getLatestData);
+        void sendResponse(getLatestData);
+      })().catch((err) => {
+        console.error(`${BACKGROUND_FCM_LOG_PREFIX} GET_ACCESS_CACHE Failed to Load AccessCache getLatestData().`, err);
       });
-      return true; // async response
+      return true;
     }
 
     // Fallback to FCM Messenges.

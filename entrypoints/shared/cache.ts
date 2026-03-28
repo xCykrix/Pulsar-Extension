@@ -1,6 +1,3 @@
-// // access-cache.ts
-// // Background task to fetch and index access data from WXT_INTERNAL_API/ui/getAccess
-
 import { browser } from 'wxt/browser';
 import { getEndpoint } from './const.ts';
 
@@ -78,7 +75,6 @@ export class AccessCache {
       this.lastUpdateSuccessful = false;
       return { userAccess: [], channelAccess: [], categoriesByGuild: {} };
     });
-    console.info('[AccessCache] Parsing /ui/getAccess Data', json);
 
     const diguilds: GuildsById = {};
     const dicategories: CategoriesByGuild = {};
@@ -101,7 +97,6 @@ export class AccessCache {
       }
       dichannels[ca.guildId][ca.channelId] = ca;
     }
-    console.info(diguilds, dicategories, dichannels);
 
     // Atomically replace old cache with new cache
     this.guilds = diguilds;

@@ -27,10 +27,19 @@ export function App(): ReactElement {
   const [lastDataAt, setLastDataAt] = useState<number | null>(null);
   const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | null>(null);
   const [secondsSinceData, setSecondsSinceData] = useState<number>(0);
+  const [connectionStatus, setConnectionStatus] = useState<'OK' | 'ERROR' | 'PENDING'>('PENDING');
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const handleFcmMessage = (message: unknown): void => {
+    const handleBackgroundMessage = (message: unknown): void => {
+      // Handle Status Check Pings
+      if (typeof message === 'object' && message !== null && (message as { type?: string }).type === 'PULSAR/STATUS_CHECK') {
+        const status = (message as { status?: string }).status;
+        setConnectionStatus(status as 'OK' | 'ERROR' | 'PENDING');
+        return;
+      }
+
+      // Fallback to FCM Message
       if (!isSidepanelFcmMessage(message)) {
         return;
       }
@@ -57,10 +66,10 @@ export function App(): ReactElement {
       }, 5000);
     };
 
-    browser.runtime.onMessage.addListener(handleFcmMessage);
+    browser.runtime.onMessage.addListener(handleBackgroundMessage);
 
     return () => {
-      browser.runtime.onMessage.removeListener(handleFcmMessage);
+      browser.runtime.onMessage.removeListener(handleBackgroundMessage);
       if (toastTimeoutRef.current !== null) {
         clearTimeout(toastTimeoutRef.current);
         toastTimeoutRef.current = null;
@@ -132,7 +141,7 @@ export function App(): ReactElement {
           </div>
         </div>
       )}
-      <div className='flex flex-1 flex-col gap-4'>
+      <div className='flex flex-1 flex-col gap-2'>
         <header className='rounded-box border border-base-300 bg-base-200 px-3 py-3 shadow-sm'>
           <div className='flex items-center justify-between gap-3'>
             <div className='flex min-w-0 items-center gap-[clamp(0.5rem,1.2vw,0.75rem)]'>
@@ -225,16 +234,73 @@ export function App(): ReactElement {
           </div>
 
           <SidepanelMenu
+            fcmAverage={deliveryLatencyMs === null ? 'N/A' : formatSecondsFromMilliseconds(deliveryLatencyMs)}
             isOpen={isMenuExpanded}
+            lastMessage={lastDataAt === null ? 'N/A' : `${secondsSinceData}s`}
             onClose={() => {
               setIsMenuExpanded(false);
             }}
           />
         </div>
 
-        <footer className='mt-auto border-t border-base-300/60 px-1 pt-3 text-left text-[10px] leading-relaxed opacity-50'>
-          <p>TTL: {lastDataAt === null ? 'N/A' : `${secondsSinceData}s`}</p>
-          <p>FCM Average: {deliveryLatencyMs === null ? 'N/A' : formatSecondsFromMilliseconds(deliveryLatencyMs)}</p>
+        <footer className='mt-auto border-t border-base-300/60 px-1 pt-1 text-[10px] leading-relaxed opacity-50 min-h-[2.7em] md:min-h-0'>
+          <div className='w-full md:grid md:grid-cols-3 md:items-center md:gap-0 flex flex-row justify-between items-end gap-1 md:flex-none'>
+            {/* Left: Connection Status (always left) */}
+            <span className='text-left text-[clamp(9px,2.5vw,12px)]'>
+              {connectionStatus === 'PENDING' ? '\u{1f7e1}' : connectionStatus === 'OK' ? '\u{1f7e2}' : '\u{1f534}'}
+            </span>
+            {/* Center: Copyright (centered on md+, right-aligned and stacked with sponsored on mobile) */}
+            <span className='hidden md:block text-center text-[clamp(9px,2.5vw,12px)]'>
+              <span className='whitespace-nowrap'>
+                Copyright (c) 2026 - Pulsar by{' '}
+                <a
+                  className='link link-hover font-medium whitespace-nowrap'
+                  href='https://github.com/amethyst-studio'
+                  rel='noreferrer'
+                  target='_blank'
+                >
+                  Amethyst&nbsp;Studio
+                </a>
+              </span>
+            </span>
+            {/* Right: Sponsored (right on md+) */}
+            <span className='hidden md:block text-right text-[clamp(9px,2.5vw,12px)]'>
+              Sponsored by{' '}
+              <a
+                className='link link-hover font-medium'
+                href='https://passivecollectibles.com/'
+                rel='noreferrer'
+                target='_blank'
+              >
+                Passive Collectibles
+              </a>
+            </span>
+            {/* Mobile stacked version: right-aligned, both on same row as flex children */}
+            <span className='flex-col items-end text-right md:hidden flex text-[clamp(7px,1.5vw,10px)] leading-tight max-w-full'>
+              <span className='whitespace-nowrap truncate max-w-full'>
+                Copyright (c) 2026 - Pulsar by{' '}
+                <a
+                  className='link link-hover font-medium whitespace-nowrap'
+                  href='https://github.com/amethyst-studio'
+                  rel='noreferrer'
+                  target='_blank'
+                >
+                  Amethyst&nbsp;Studio
+                </a>
+              </span>
+              <span className='whitespace-nowrap truncate max-w-full mt-1'>
+                Sponsored by{' '}
+                <a
+                  className='link link-hover font-medium'
+                  href='https://passivecollectibles.com/'
+                  rel='noreferrer'
+                  target='_blank'
+                >
+                  Passive Collectibles
+                </a>
+              </span>
+            </span>
+          </div>
         </footer>
       </div>
     </div>
