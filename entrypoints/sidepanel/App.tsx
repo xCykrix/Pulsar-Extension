@@ -3,10 +3,9 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 // import { getGuildOptions } from '../shared/access-cache.ts';
-import { SidepanelMenu } from './components/SidepanelMenu.tsx';
-import { useDiscordAuth } from './hooks/useDiscordAuth.ts';
+import { SidePanelMenu } from './components/SidePanelMenu.tsx';
+import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
-import { appUseSession } from './hooks/useSession.ts';
 
 interface SidepanelFcmMessage {
   type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
@@ -19,9 +18,7 @@ interface SidepanelFcmMessage {
 }
 
 export function App(): ReactElement {
-  const appSession = appUseSession();
-
-  const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth({ useAppSession: appSession });
+  const appUseAuthentication: UseAuthentication = useAuthentication();
 
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
@@ -110,11 +107,11 @@ export function App(): ReactElement {
       globalThis.removeEventListener('keydown', handleKeyDown);
     };
   }, [isMenuExpanded]);
-  useFirebaseTokenRegistration({ appUseSession: appSession });
+  useFirebaseTokenRegistration({ useAuthentication: appUseAuthentication });
 
   return (
     <div className='flex min-h-screen flex-col bg-base-300 p-4'>
-      {authError !== null && (
+      {appUseAuthentication.authError !== null && (
         <div className='toast toast-bottom toast-center z-50 w-full max-w-xs'>
           <div role='alert' className='alert alert-error shadow-lg'>
             <svg xmlns='http://www.w3.org/2000/svg' className='h-5 w-5 shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' aria-hidden='true'>
@@ -122,8 +119,8 @@ export function App(): ReactElement {
               <line x1='12' y1='8' x2='12' y2='12' />
               <line x1='12' y1='16' x2='12.01' y2='16' />
             </svg>
-            <span className='text-sm'>{authError}</span>
-            <button type='button' className='btn btn-ghost btn-xs' aria-label='Dismiss' onClick={dismissAuthError}>\u{2715}</button>
+            <span className='text-sm'>{appUseAuthentication.authError}</span>
+            <button type='button' className='btn btn-ghost btn-xs' aria-label='Dismiss' onClick={appUseAuthentication.dismissAuthError}>\u{2715}</button>
           </div>
         </div>
       )}
@@ -170,30 +167,30 @@ export function App(): ReactElement {
               </div>
             </div>
 
-            {appSession.user !== null
+            {appUseAuthentication.user !== null
               ? (
                 <div className='dropdown dropdown-end shrink-0'>
                   <div tabIndex={0} role='button' className='avatar cursor-pointer' aria-label='Account menu'>
                     <div className='rounded-full [height:clamp(2rem,6vw,2.75rem)] [width:clamp(2rem,6vw,2.75rem)]'>
-                      {appSession.user.avatar !== ''
+                      {appUseAuthentication.user.avatar !== ''
                         ? (
                           <img
-                            src={`https://cdn.discordapp.com/avatars/${appSession.user.id}/${appSession.user.avatar}.png`}
-                            alt={appSession.user.username}
+                            src={`https://cdn.discordapp.com/avatars/${appUseAuthentication.user.id}/${appUseAuthentication.user.avatar}.png`}
+                            alt={appUseAuthentication.user.username}
                             referrerPolicy='no-referrer'
                           />
                         )
                         : (
                           <div className='grid h-full w-full place-items-center rounded-full bg-primary text-[clamp(0.7rem,2vw,1rem)] font-bold text-primary-content'>
-                            {appSession.user.username.charAt(0).toUpperCase()}
+                            {appUseAuthentication.user.username.charAt(0).toUpperCase()}
                           </div>
                         )}
                     </div>
                   </div>
                   <ul tabIndex={0} className='dropdown-content menu menu-sm z-50 mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg'>
-                    <li className='menu-title px-2 py-1 text-xs opacity-60'>{appSession.user.username}</li>
+                    <li className='menu-title px-2 py-1 text-xs opacity-60'>{appUseAuthentication.user.username}</li>
                     <li>
-                      <button type='button' onClick={appSession.logOutSession} className='text-error'>
+                      <button type='button' onClick={appUseAuthentication.logOutSession} className='text-error'>
                         Log Out
                       </button>
                     </li>
@@ -205,9 +202,9 @@ export function App(): ReactElement {
                   type='button'
                   className='btn btn-primary btn-square shrink-0 transition-[width,height] duration-200 [height:clamp(2rem,6vw,2.75rem)] [width:clamp(2rem,6vw,2.75rem)]'
                   aria-label='Sign in with Discord'
-                  disabled={isLoggingIn}
+                  disabled={appUseAuthentication.isLoggingIn}
                   onClick={() => {
-                    void handleDiscordLogin();
+                    void appUseAuthentication.startDiscordLogin();
                   }}
                 >
                   <svg
@@ -233,8 +230,8 @@ export function App(): ReactElement {
             </div>
           </div>
 
-          <SidepanelMenu
-            appUseSession={appSession}
+          <SidePanelMenu
+            useAuthentication={appUseAuthentication}
             fcmAverage={deliveryLatencyMs === null ? 'N/A' : formatSecondsFromMilliseconds(deliveryLatencyMs)}
             isOpen={isMenuExpanded}
             lastMessage={lastDataAt === null ? 'N/A' : `${secondsSinceData}s`}

@@ -38,6 +38,7 @@ export class Firebase {
     return this.messaging!;
   }
 
+  // deno-lint-ignore require-await
   public static async getFirebaseMessagingFrontend(): Promise<MessagingSW> {
     // Ensure App
     this.initialize();

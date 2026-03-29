@@ -2,21 +2,21 @@ import { useEffect, useState } from 'react';
 
 import { FCM_REGISTER_POLL_RATE } from '../../shared/const.ts';
 import { Firebase } from '../../shared/firebase.ts';
-import type { AppUseSession } from './useSession.ts';
+import type { UseAuthentication } from './useAuthentication.ts';
 
 interface UseFirebaseTokenRegistration {
   isRegistering: boolean;
   registrationError: string | null;
 }
 
-export function useFirebaseTokenRegistration({ appUseSession }: {
-  appUseSession: AppUseSession;
+export function useFirebaseTokenRegistration({ useAuthentication }: {
+  useAuthentication: UseAuthentication;
 }): UseFirebaseTokenRegistration {
   const [isRegistering, setIsRegistering] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (appUseSession.sessionToken === null || appUseSession.sessionToken.trim().length === 0) {
+    if (useAuthentication.sessionToken === null || useAuthentication.sessionToken.trim().length === 0) {
       return;
     }
 
@@ -45,7 +45,7 @@ export function useFirebaseTokenRegistration({ appUseSession }: {
     return () => {
       clearInterval(intervalId);
     };
-  }, [appUseSession.sessionToken]);
+  }, [useAuthentication.sessionToken, useAuthentication.fcmToken]);
 
   return { isRegistering, registrationError };
 }

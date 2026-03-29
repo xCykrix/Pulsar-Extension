@@ -2,10 +2,10 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { AccessCache, UserAccess } from '../../shared/cache.ts';
 import { getEndpoint } from '../../shared/const.ts';
-import type { AppUseSession } from '../hooks/useSession.ts';
+import { UseAuthentication } from '../hooks/useAuthentication.ts';
 
-export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, onClose, onCreateGroup }: {
-  appUseSession: AppUseSession;
+export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessage, onClose, onCreateGroup }: {
+  useAuthentication: UseAuthentication;
   isOpen: boolean;
   fcmAverage: string;
   lastMessage: string;
@@ -103,7 +103,7 @@ export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, 
         setGenericValidationReject('OK');
 
         try {
-          if (appUseSession.sessionToken === null) {
+          if (useAuthentication.sessionToken === null) {
             return;
           }
 
@@ -122,7 +122,7 @@ export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, 
           const guildInflightValidate = await fetch(guildInflightValidationEndpoint.toString(), {
             method: 'HEAD',
             headers: {
-              'Authorization': `Bearer ${appUseSession.sessionToken}`,
+              'Authorization': `Bearer ${useAuthentication.sessionToken}`,
               'X-Validation-Types': validationTypes.join(','),
             },
           });

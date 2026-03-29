@@ -41,6 +41,7 @@ export default defineBackground(() => {
   setInterval(async () => {
     const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
     const statusEndpoint = getEndpoint('/notification/status');
+    console.debug(`${BACKGROUND_FCM_LOG_PREFIX} Running Status Check.`);
 
     if (!sessionToken) {
       void browser.runtime.sendMessage({

@@ -22,4 +22,4 @@ export const FIREBASE = {
   appId: env.WXT_FIREBASE_APP_ID ?? '',
   vapidKey: env.WXT_FIREBASE_VAPID_KEY ?? '',
 } as const;
-export const FCM_REGISTER_POLL_RATE = 5000;
+export const FCM_REGISTER_POLL_RATE = 120000;

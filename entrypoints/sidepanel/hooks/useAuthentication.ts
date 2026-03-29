@@ -1,23 +1,87 @@
-import { useEffect, useRef, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/const.ts';
-import type { AppUseSession } from './useSession.ts';
 
-export function useDiscordAuth({ useAppSession }: {
-  useAppSession: AppUseSession;
-}): {
-  isLoggingIn: boolean;
-  authError: string | null;
-  handleDiscordLogin: () => void;
+export interface SessionUser {
+  id: string;
+  username: string;
+  email: string;
+  avatar: string;
+}
+
+export interface UseAuthentication {
+  user: SessionUser | null;
+  sessionToken: string | null;
+  fcmToken: string | null;
+  setUser: Dispatch<SetStateAction<SessionUser | null>>;
+  setSessionToken: Dispatch<SetStateAction<string | null>>;
+  setFcmToken: Dispatch<SetStateAction<string | null>>;
+  logOutSession: () => void;
+  startDiscordLogin: () => void;
   dismissAuthError: () => void;
-} {
+  authError: string | null;
+  isLoggingIn: boolean;
+}
+
+let storageListener: ((changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) | null = null;
+
+function logOutSession(): void {
+  console.debug('[useAuthentication][logOutSession] Logging out session.');
+  browser.storage.local.remove(['user', 'sessionToken', 'fcmToken']);
+}
+
+export function useAuthentication(): UseAuthentication {
+  // Stored Local Session States
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
+
+  // Authentication States
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // References
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStartRef = useRef<number | null>(null);
   const oauthTabIdRef = useRef<number | null>(null);
+
+  // Register Change Listeners
+  if (storageListener === null) {
+    console.debug('[useAuthentication] Initializing session state from storage and setting up storage listener.');
+    void browser.storage.local.get(['user', 'sessionToken', 'fcmToken']).then((result) => {
+      const storedUser = (result as { user?: SessionUser }).user ?? null;
+      const storedSessionToken = (result as { sessionToken?: string }).sessionToken ?? null;
+      const storedFcmToken = (result as { fcmToken?: string }).fcmToken ?? null;
+      setUser(storedUser);
+      setSessionToken(storedSessionToken);
+      setFcmToken(storedFcmToken);
+      console.debug('[useAuthentication] Session state initialized from storage.');
+    });
+
+    storageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>): void => {
+      console.debug('[useAuthentication][storageListener] Storage changed, updating session state.');
+      if ('user' in changes) {
+        console.debug('[useAuthentication][storageListener] User changed, updating user state.');
+        setUser((changes['user']?.newValue as SessionUser) ?? null);
+      }
+      if ('sessionToken' in changes) {
+        console.debug('[useAuthentication][storageListener] Session token changed, updating sessionToken state.');
+        setSessionToken((changes['sessionToken']?.newValue as string) ?? null);
+      }
+      if ('fcmToken' in changes) {
+        console.debug('[useAuthentication][storageListener] FCM token changed, updating fcmToken state.');
+        setFcmToken((changes['fcmToken']?.newValue as string) ?? null);
+      }
+    };
+
+    browser.storage.onChanged.addListener(storageListener);
+  }
+
+  useEffect(() => {
+    console.debug('[useAuthentication] Persisting session state to storage.');
+    void browser.storage.local.set({ user, sessionToken, fcmToken });
+  }, [user, sessionToken, fcmToken]);
 
   useEffect(() => {
     return () => {
@@ -77,7 +141,7 @@ export function useDiscordAuth({ useAppSession }: {
       pollStartRef.current !== null
       && Date.now() - pollStartRef.current >= OAUTH_POLL_TTL
     ) {
-      console.error('[useDiscordAuth][pollSession] Timed out after 120s');
+      console.error('[useAuthentication][pollSession] Timed out after 120s');
       await abortAuthPolling('Login to Pulsar Timed Out. Please try again.');
       return;
     }
@@ -94,8 +158,8 @@ export function useDiscordAuth({ useAppSession }: {
 
       if (response.status === 200) {
         const data = (await response.json()) as SessionSuccessResponse;
-        useAppSession.setUser(data.user);
-        useAppSession.setSessionToken(data.sessionToken);
+        setUser(data.user);
+        setSessionToken(data.sessionToken);
         await abortAuthPolling();
         return;
       }
@@ -107,7 +171,7 @@ export function useDiscordAuth({ useAppSession }: {
         cause = errorBody.cause ?? '';
       }
       catch {
-        // ignore JSON parse failure
+        console.debug('[useAuthentication][pollSession] Failed to parse error response body as JSON. Failing to generic response.');
       }
 
       // 400 SessionIdMissing is immediately fatal (threshold 1)
@@ -115,7 +179,7 @@ export function useDiscordAuth({ useAppSession }: {
       const nextFailCount = isFatal ? OAUTH_POLL_FAIL_COUNT : failCount + 1;
 
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error(`[useDiscordAuth][pollSession] OAuthSessionIDMissing Response. Polling has been aborted.`);
+        console.error(`[useAuthentication][pollSession] OAuthSessionIDMissing Response. Polling has been aborted.`);
         await abortAuthPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
@@ -127,7 +191,7 @@ export function useDiscordAuth({ useAppSession }: {
     catch (error) {
       const nextFailCount = failCount + 1;
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error('[useDiscordAuth][pollSession] OAuthSessionNetworkError. Polling has been aborted.', error);
+        console.error('[useAuthentication][pollSession] OAuthSessionNetworkError. Polling has been aborted.', error);
         await abortAuthPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
@@ -137,7 +201,7 @@ export function useDiscordAuth({ useAppSession }: {
     }
   };
 
-  const handleDiscordLogin = (): void => {
+  const startDiscordLogin = (): void => {
     setIsLoggingIn(true);
     void (async () => {
       try {
@@ -152,33 +216,26 @@ export function useDiscordAuth({ useAppSession }: {
         void pollSession(data.sessionId, 0);
       }
       catch (error) {
-        console.error('[useDiscordAuth][handleDiscordLogin] OAuthLoginFailed. Login has been aborted.', error);
+        console.error('[useAuthentication][handleDiscordLogin] OAuthLoginFailed. Login has been aborted.', error);
         setIsLoggingIn(false);
         showAuthError('Login to Pulsar Failed. Please try again.');
       }
     })();
   };
 
-  return { isLoggingIn, authError, handleDiscordLogin, dismissAuthError };
+  return { user, sessionToken, fcmToken, setUser, setSessionToken, setFcmToken, logOutSession, isLoggingIn, authError, startDiscordLogin, dismissAuthError };
 }
 
-export interface LoginResponse {
+interface LoginResponse {
   sessionId: string;
   redirect: string;
 }
 
-export interface SessionUser {
-  id: string;
-  username: string;
-  email: string;
-  avatar: string;
-}
-
-export interface SessionSuccessResponse {
+interface SessionSuccessResponse {
   user: SessionUser;
   sessionToken: string;
 }
 
-export interface SessionErrorResponse {
+interface SessionErrorResponse {
   cause?: string;
 }
