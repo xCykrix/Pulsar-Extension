@@ -2,10 +2,12 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { AccessCache, UserAccess } from '../../shared/cache.ts';
 import { getEndpoint } from '../../shared/const.ts';
+import { AppUseSession, useSession } from '../hooks/useSession.ts';
 
-export function SidepanelMenu({ fcmAverage, isOpen, lastMessage, onClose, onCreateGroup }: {
-  fcmAverage: string;
+export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, onClose, onCreateGroup }: {
+  appUseSession: AppUseSession;
   isOpen: boolean;
+  fcmAverage: string;
   lastMessage: string;
   onClose: () => void;
   onCreateGroup?: () => void;
@@ -13,6 +15,9 @@ export function SidepanelMenu({ fcmAverage, isOpen, lastMessage, onClose, onCrea
   // Modal State Controls
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [userAccess, setUserAccess] = useState<UserAccess[]>([]);
+
+  // Modal State Sessions
+  const { sessionToken } = useSession(appUseSession);
 
   // Models Validation State
   const [isInflightValidating, setIsInflightValidating] = useState(false);
@@ -99,12 +104,9 @@ export function SidepanelMenu({ fcmAverage, isOpen, lastMessage, onClose, onCrea
 
         // Clear Rejections
         setGenericValidationReject('OK');
-        // setGuildValidationReject('OK');
-        // setGroupNameValidationReject('OK');
 
         try {
-          const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
-          if (!sessionToken) {
+          if (sessionToken === null) {
             return;
           }
 

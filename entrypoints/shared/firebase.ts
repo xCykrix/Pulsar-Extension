@@ -75,14 +75,14 @@ export class Firebase {
         serviceWorkerRegistration: await this.getExtensionServiceWorkerRegistration(),
       },
     ).catch((err) => {
-      console.error('[Pulsar][Firebase] Failed to get FCM token.', err);
+      console.error('[Pulsar][Firebase] Failed to get FCM Token.', err);
       return null;
     });
 
     // Validate Token
     if (token === null || token.trim().length === 0) {
       console.error('[Pulsar][Firebase] Invalid FCM Token Response for getToken():', token);
-      throw new Error('Firebase getToken returned an invalid response.');
+      throw new Error('Firebase getToken returned an Invalid Response.');
     }
 
     // Quick Respond on Identical Token

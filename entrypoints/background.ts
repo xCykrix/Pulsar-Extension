@@ -43,10 +43,10 @@ export default defineBackground(() => {
     const statusEndpoint = getEndpoint('/notification/status');
 
     if (!sessionToken) {
-      browser.runtime.sendMessage({
+      void browser.runtime.sendMessage({
         type: 'PULSAR/STATUS_CHECK',
         status: 'PENDING',
-      });
+      }).catch(() => {});
       return;
     }
 
@@ -59,22 +59,22 @@ export default defineBackground(() => {
     }).catch(() => null);
 
     if (response?.ok && response.status === 200) {
-      browser.runtime.sendMessage({
+      void browser.runtime.sendMessage({
         type: 'PULSAR/STATUS_CHECK',
         status: 'OK',
-      });
+      }).catch(() => {});
     }
     else if (response?.ok && response.status === 401) {
-      browser.runtime.sendMessage({
+      void browser.runtime.sendMessage({
         type: 'PULSAR/STATUS_CHECK',
         status: 'PENDING',
-      });
+      }).catch(() => {});
     }
     else {
-      browser.runtime.sendMessage({
+      void browser.runtime.sendMessage({
         type: 'PULSAR/STATUS_CHECK',
         status: 'ERROR',
-      });
+      }).catch(() => {});
     }
   }, 1000);
 

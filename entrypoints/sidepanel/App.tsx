@@ -6,7 +6,7 @@ import { browser } from 'wxt/browser';
 import { SidepanelMenu } from './components/SidepanelMenu.tsx';
 import { useDiscordAuth } from './hooks/useDiscordAuth.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
-import { useSession } from './hooks/useSession.ts';
+import { appUseSession } from './hooks/useSession.ts';
 
 interface SidepanelFcmMessage {
   type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
@@ -19,8 +19,8 @@ interface SidepanelFcmMessage {
 }
 
 export function App(): ReactElement {
-  const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth();
-  const { user, sessionToken, logout } = useSession();
+  const useSession = appUseSession();
+  const { isLoggingIn, authError, handleDiscordLogin, dismissAuthError } = useDiscordAuth(useSession);
 
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
@@ -109,8 +109,7 @@ export function App(): ReactElement {
       globalThis.removeEventListener('keydown', handleKeyDown);
     };
   }, [isMenuExpanded]);
-
-  useFirebaseTokenRegistration(sessionToken);
+  useFirebaseTokenRegistration(useSession);
 
   return (
     <div className='flex min-h-screen flex-col bg-base-300 p-4'>
@@ -170,30 +169,30 @@ export function App(): ReactElement {
               </div>
             </div>
 
-            {user !== null
+            {useSession.user !== null
               ? (
                 <div className='dropdown dropdown-end shrink-0'>
                   <div tabIndex={0} role='button' className='avatar cursor-pointer' aria-label='Account menu'>
                     <div className='rounded-full [height:clamp(2rem,6vw,2.75rem)] [width:clamp(2rem,6vw,2.75rem)]'>
-                      {user.avatar !== ''
+                      {useSession.user.avatar !== ''
                         ? (
                           <img
-                            src={`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`}
-                            alt={user.username}
+                            src={`https://cdn.discordapp.com/avatars/${useSession.user.id}/${useSession.user.avatar}.png`}
+                            alt={useSession.user.username}
                             referrerPolicy='no-referrer'
                           />
                         )
                         : (
                           <div className='grid h-full w-full place-items-center rounded-full bg-primary text-[clamp(0.7rem,2vw,1rem)] font-bold text-primary-content'>
-                            {user.username.charAt(0).toUpperCase()}
+                            {useSession.user.username.charAt(0).toUpperCase()}
                           </div>
                         )}
                     </div>
                   </div>
                   <ul tabIndex={0} className='dropdown-content menu menu-sm z-50 mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg'>
-                    <li className='menu-title px-2 py-1 text-xs opacity-60'>{user.username}</li>
+                    <li className='menu-title px-2 py-1 text-xs opacity-60'>{useSession.user.username}</li>
                     <li>
-                      <button type='button' onClick={logout} className='text-error'>
+                      <button type='button' onClick={useSession.logOutSession} className='text-error'>
                         Log Out
                       </button>
                     </li>
@@ -234,6 +233,7 @@ export function App(): ReactElement {
           </div>
 
           <SidepanelMenu
+            appUseSession={useSession}
             fcmAverage={deliveryLatencyMs === null ? 'N/A' : formatSecondsFromMilliseconds(deliveryLatencyMs)}
             isOpen={isMenuExpanded}
             lastMessage={lastDataAt === null ? 'N/A' : `${secondsSinceData}s`}

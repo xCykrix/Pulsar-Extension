@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/const.ts';
+import { type AppUseSession, useSession } from './useSession.ts';
 
-interface UseDiscordAuth {
+export function useDiscordAuth(useAppSession: AppUseSession): {
   isLoggingIn: boolean;
   authError: string | null;
   handleDiscordLogin: () => void;
   dismissAuthError: () => void;
-}
+} {
+  const { setUser, setSessionToken } = useSession(useAppSession);
 
-export function useDiscordAuth(): UseDiscordAuth {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -77,12 +78,12 @@ export function useDiscordAuth(): UseDiscordAuth {
       && Date.now() - pollStartRef.current >= OAUTH_POLL_TTL
     ) {
       console.error('[Pulsar] Session polling timed out after 120s');
-      await stopPolling('Authentication timed out. Please try again.');
+      await stopPolling('Login to Pulsar Timed Out. Please try again.');
       return;
     }
 
     try {
-      const response = await fetch(getEndpoint(`/oauth/session?sessionId=${encodeURIComponent(sessionId)}`));
+      const response = await fetch(getEndpoint(`/oauth/session?sessionId=${sessionId}`));
 
       if (response.status === 202) {
         pollTimeoutRef.current = setTimeout(() => {
@@ -93,12 +94,13 @@ export function useDiscordAuth(): UseDiscordAuth {
 
       if (response.status === 200) {
         const data = (await response.json()) as SessionSuccessResponse;
-        await browser.storage.local.set({ user: data.user, sessionToken: data.sessionToken });
+        setUser(data.user);
+        setSessionToken(data.sessionToken);
         await stopPolling();
         return;
       }
 
-      // Parse Error Cause
+      // Parse Error Cause`
       let cause = '';
       try {
         const errorBody = (await response.json()) as SessionErrorResponse;
@@ -113,8 +115,8 @@ export function useDiscordAuth(): UseDiscordAuth {
       const nextFailCount = isFatal ? OAUTH_POLL_FAIL_COUNT : failCount + 1;
 
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error(`[Pulsar] Session polling stopped: HTTP ${response.status} cause="${cause}"`);
-        await stopPolling('Authentication failed. Please try again.');
+        console.error(`[Pulsar] OAuthSessionIDMissing Response. Polling has been aborted.`);
+        await stopPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
 
@@ -125,8 +127,8 @@ export function useDiscordAuth(): UseDiscordAuth {
     catch (error) {
       const nextFailCount = failCount + 1;
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error('[Pulsar] Session polling network error:', error);
-        await stopPolling('Authentication failed. Please try again.');
+        console.error('[Pulsar] OAuthSessionNetworkError. Polling has been aborted.', error);
+        await stopPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
       pollTimeoutRef.current = setTimeout(() => {
@@ -141,7 +143,7 @@ export function useDiscordAuth(): UseDiscordAuth {
       try {
         const response = await fetch(getEndpoint('/oauth/login'));
         if (!response.ok) {
-          throw new Error(`Login request failed with status ${response.status}`);
+          throw new Error(`[Pulsar] OAuthLoginFailed: Endpoint Returned Failure. Status: ${response.status}`);
         }
         const data = (await response.json()) as LoginResponse;
         const tab = await browser.tabs.create({ url: data.redirect });
@@ -150,9 +152,9 @@ export function useDiscordAuth(): UseDiscordAuth {
         void pollSession(data.sessionId, 0);
       }
       catch (error) {
-        console.error('[Pulsar] Discord login failed:', error);
+        console.error('[Pulsar] OAuthLoginFailed. Login has been aborted.', error);
         setIsLoggingIn(false);
-        showAuthError('Could not reach authentication service. Please try again.');
+        showAuthError('Login to Pulsar Failed. Please try again.');
       }
     })();
   };

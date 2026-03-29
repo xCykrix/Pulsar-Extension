@@ -1,59 +1,68 @@
-import { useEffect, useState } from 'react';
+// import { useEffect, useState } from 'react';
+// import { browser } from 'wxt/browser';
+// import type { SessionUser } from './useDiscordAuth.ts';
+
+import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { SessionUser } from './useDiscordAuth.ts';
 
-interface UseSession {
+let storageListener: ((changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) | null = null;
+
+export interface AppUseSession {
   user: SessionUser | null;
   sessionToken: string | null;
   fcmToken: string | null;
-
-  isLoaded: boolean;
-  logout: () => void;
+  setUser: Dispatch<SetStateAction<SessionUser | null>>;
+  setSessionToken: Dispatch<SetStateAction<string | null>>;
+  setFcmToken: Dispatch<SetStateAction<string | null>>;
+  logOutSession: () => void;
 }
 
-export function useSession(): UseSession {
+export function appUseSession(): AppUseSession {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
 
-  useEffect(() => {
+  if (storageListener === null) {
     void browser.storage.local.get(['user', 'sessionToken', 'fcmToken']).then((result) => {
-      const stored = (result as { user?: SessionUser }).user ?? null;
-      const token = (result as { sessionToken?: string }).sessionToken ?? null;
-      const fcmToken = (result as { fcmToken?: string }).fcmToken ?? null;
-      setUser(stored);
-      setSessionToken(token);
-      setFcmToken(fcmToken);
-      setIsLoaded(true);
+      const storedUser = (result as { user?: SessionUser }).user ?? null;
+      const storedSessionToken = (result as { sessionToken?: string }).sessionToken ?? null;
+      const storedFcmToken = (result as { fcmToken?: string }).fcmToken ?? null;
+      setUser(storedUser);
+      setSessionToken(storedSessionToken);
+      setFcmToken(storedFcmToken);
     });
 
-    const change = (
-      changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
-    ): void => {
+    storageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>): void => {
+      console.debug('[useSession][storageListener] Storage changed, updating session state.');
       if ('user' in changes) {
-        const next = changes['user']?.newValue ?? null;
-        setUser(next !== null ? (next as SessionUser) : null);
+        setUser((changes['user']?.newValue as SessionUser) ?? null);
       }
       if ('sessionToken' in changes) {
-        const nextToken = changes['sessionToken']?.newValue ?? null;
-        setSessionToken(nextToken !== null ? (nextToken as string) : null);
+        setSessionToken((changes['sessionToken']?.newValue as string) ?? null);
       }
       if ('fcmToken' in changes) {
-        const nextFcmToken = changes['fcmToken']?.newValue ?? null;
-        setFcmToken(nextFcmToken !== null ? (nextFcmToken as string) : null);
+        setFcmToken((changes['fcmToken']?.newValue as string) ?? null);
       }
     };
 
-    browser.storage.onChanged.addListener(change);
-    return () => {
-      browser.storage.onChanged.removeListener(change);
-    };
-  }, []);
+    browser.storage.onChanged.addListener(storageListener);
+  }
 
-  const logout = (): void => {
-    void browser.storage.local.remove(['user', 'sessionToken', 'fcmToken']);
-  };
+  return { user, sessionToken, fcmToken, setSessionToken, setUser, setFcmToken, logOutSession };
+}
 
-  return { user, sessionToken, fcmToken, isLoaded, logout };
+// TODO: Remove this and just use a global state instead?
+export function useSession(appUseSession: AppUseSession): AppUseSession {
+  useEffect(() => {
+    console.debug('[useSession][useEffect] Updating Session State Storage.');
+    browser.storage.local.set({ user: appUseSession.user, sessionToken: appUseSession.sessionToken, fcmToken: appUseSession.fcmToken });
+  }, [appUseSession.user, appUseSession.sessionToken, appUseSession.fcmToken]);
+
+  return { user: appUseSession.user, sessionToken: appUseSession.sessionToken, fcmToken: appUseSession.fcmToken, setSessionToken: appUseSession.setSessionToken, setUser: appUseSession.setUser, setFcmToken: appUseSession.setFcmToken, logOutSession };
+}
+
+function logOutSession(): void {
+  console.debug('[useSession][logOutSession] Logging out session.');
+  browser.storage.local.remove(['user', 'sessionToken', 'fcmToken']);
 }
