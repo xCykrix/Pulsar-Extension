@@ -20,6 +20,7 @@ export class Firebase {
     this.instance = app;
   }
 
+  // deno-lint-ignore require-await
   public static async getFirebaseMessagingServiceWorker(): Promise<Messaging> {
     // Ensure App
     this.initialize();

@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { AccessCache, UserAccess } from '../../shared/cache.ts';
 import { getEndpoint } from '../../shared/const.ts';
-import { AppUseSession, useSession } from '../hooks/useSession.ts';
+import type { AppUseSession } from '../hooks/useSession.ts';
 
 export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, onClose, onCreateGroup }: {
   appUseSession: AppUseSession;
@@ -15,9 +15,6 @@ export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, 
   // Modal State Controls
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [userAccess, setUserAccess] = useState<UserAccess[]>([]);
-
-  // Modal State Sessions
-  const { sessionToken } = useSession(appUseSession);
 
   // Models Validation State
   const [isInflightValidating, setIsInflightValidating] = useState(false);
@@ -106,7 +103,7 @@ export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, 
         setGenericValidationReject('OK');
 
         try {
-          if (sessionToken === null) {
+          if (appUseSession.sessionToken === null) {
             return;
           }
 
@@ -125,7 +122,7 @@ export function SidepanelMenu({ appUseSession, isOpen, fcmAverage, lastMessage, 
           const guildInflightValidate = await fetch(guildInflightValidationEndpoint.toString(), {
             method: 'HEAD',
             headers: {
-              'Authorization': `Bearer ${sessionToken}`,
+              'Authorization': `Bearer ${appUseSession.sessionToken}`,
               'X-Validation-Types': validationTypes.join(','),
             },
           });

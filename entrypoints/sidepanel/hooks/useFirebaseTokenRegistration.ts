@@ -2,21 +2,21 @@ import { useEffect, useState } from 'react';
 
 import { FCM_REGISTER_POLL_RATE } from '../../shared/const.ts';
 import { Firebase } from '../../shared/firebase.ts';
-import { type AppUseSession, useSession } from './useSession.ts';
+import type { AppUseSession } from './useSession.ts';
 
 interface UseFirebaseTokenRegistration {
   isRegistering: boolean;
   registrationError: string | null;
 }
 
-export function useFirebaseTokenRegistration(appUseSession: AppUseSession): UseFirebaseTokenRegistration {
+export function useFirebaseTokenRegistration({ appUseSession }: {
+  appUseSession: AppUseSession;
+}): UseFirebaseTokenRegistration {
   const [isRegistering, setIsRegistering] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
 
-  const { sessionToken } = useSession(appUseSession);
-
   useEffect(() => {
-    if (sessionToken === null || sessionToken.trim().length === 0) {
+    if (appUseSession.sessionToken === null || appUseSession.sessionToken.trim().length === 0) {
       return;
     }
 
@@ -24,6 +24,8 @@ export function useFirebaseTokenRegistration(appUseSession: AppUseSession): UseF
       if (isRegistering) {
         return;
       }
+      console.debug('[useFirebaseTokenRegistration][run] Refreshing Firebase Token.');
+
       setIsRegistering(true);
       setRegistrationError(null);
 
@@ -43,7 +45,7 @@ export function useFirebaseTokenRegistration(appUseSession: AppUseSession): UseF
     return () => {
       clearInterval(intervalId);
     };
-  }, [sessionToken]);
+  }, [appUseSession.sessionToken]);
 
   return { isRegistering, registrationError };
 }

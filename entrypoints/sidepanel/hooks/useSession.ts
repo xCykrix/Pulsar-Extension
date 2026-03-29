@@ -2,7 +2,7 @@
 // import { browser } from 'wxt/browser';
 // import type { SessionUser } from './useDiscordAuth.ts';
 
-import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { SessionUser } from './useDiscordAuth.ts';
 
@@ -24,6 +24,7 @@ export function appUseSession(): AppUseSession {
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   if (storageListener === null) {
+    console.debug('[useSession] Initializing session state from storage and setting up storage listener.');
     void browser.storage.local.get(['user', 'sessionToken', 'fcmToken']).then((result) => {
       const storedUser = (result as { user?: SessionUser }).user ?? null;
       const storedSessionToken = (result as { sessionToken?: string }).sessionToken ?? null;
@@ -31,17 +32,21 @@ export function appUseSession(): AppUseSession {
       setUser(storedUser);
       setSessionToken(storedSessionToken);
       setFcmToken(storedFcmToken);
+      console.debug('[useSession] Session state initialized from storage.');
     });
 
     storageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>): void => {
       console.debug('[useSession][storageListener] Storage changed, updating session state.');
       if ('user' in changes) {
+        console.debug('[useSession][storageListener] User changed, updating user state.');
         setUser((changes['user']?.newValue as SessionUser) ?? null);
       }
       if ('sessionToken' in changes) {
+        console.debug('[useSession][storageListener] Session token changed, updating sessionToken state.');
         setSessionToken((changes['sessionToken']?.newValue as string) ?? null);
       }
       if ('fcmToken' in changes) {
+        console.debug('[useSession][storageListener] FCM token changed, updating fcmToken state.');
         setFcmToken((changes['fcmToken']?.newValue as string) ?? null);
       }
     };
@@ -50,16 +55,6 @@ export function appUseSession(): AppUseSession {
   }
 
   return { user, sessionToken, fcmToken, setSessionToken, setUser, setFcmToken, logOutSession };
-}
-
-// TODO: Remove this and just use a global state instead?
-export function useSession(appUseSession: AppUseSession): AppUseSession {
-  useEffect(() => {
-    console.debug('[useSession][useEffect] Updating Session State Storage.');
-    browser.storage.local.set({ user: appUseSession.user, sessionToken: appUseSession.sessionToken, fcmToken: appUseSession.fcmToken });
-  }, [appUseSession.user, appUseSession.sessionToken, appUseSession.fcmToken]);
-
-  return { user: appUseSession.user, sessionToken: appUseSession.sessionToken, fcmToken: appUseSession.fcmToken, setSessionToken: appUseSession.setSessionToken, setUser: appUseSession.setUser, setFcmToken: appUseSession.setFcmToken, logOutSession };
 }
 
 function logOutSession(): void {

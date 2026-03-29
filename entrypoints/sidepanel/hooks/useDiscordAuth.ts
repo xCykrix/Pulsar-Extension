@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/const.ts';
-import { type AppUseSession, useSession } from './useSession.ts';
+import type { AppUseSession } from './useSession.ts';
 
-export function useDiscordAuth(useAppSession: AppUseSession): {
+export function useDiscordAuth({ useAppSession }: {
+  useAppSession: AppUseSession;
+}): {
   isLoggingIn: boolean;
   authError: string | null;
   handleDiscordLogin: () => void;
   dismissAuthError: () => void;
 } {
-  const { setUser, setSessionToken } = useSession(useAppSession);
-
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStartRef = useRef<number | null>(null);
   const oauthTabIdRef = useRef<number | null>(null);
-  const errorDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
@@ -38,7 +38,7 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
       clearTimeout(errorDismissRef.current);
     }
     errorDismissRef.current = setTimeout(() => {
-      setAuthError(null);
+      dismissAuthError();
       errorDismissRef.current = null;
     }, 5000);
   };
@@ -51,7 +51,7 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
     }
   };
 
-  const stopPolling = async (errorMessage?: string): Promise<void> => {
+  const abortAuthPolling = async (errorMessage?: string): Promise<void> => {
     if (pollTimeoutRef.current !== null) {
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
@@ -77,8 +77,8 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
       pollStartRef.current !== null
       && Date.now() - pollStartRef.current >= OAUTH_POLL_TTL
     ) {
-      console.error('[Pulsar] Session polling timed out after 120s');
-      await stopPolling('Login to Pulsar Timed Out. Please try again.');
+      console.error('[useDiscordAuth][pollSession] Timed out after 120s');
+      await abortAuthPolling('Login to Pulsar Timed Out. Please try again.');
       return;
     }
 
@@ -94,9 +94,9 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
 
       if (response.status === 200) {
         const data = (await response.json()) as SessionSuccessResponse;
-        setUser(data.user);
-        setSessionToken(data.sessionToken);
-        await stopPolling();
+        useAppSession.setUser(data.user);
+        useAppSession.setSessionToken(data.sessionToken);
+        await abortAuthPolling();
         return;
       }
 
@@ -115,8 +115,8 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
       const nextFailCount = isFatal ? OAUTH_POLL_FAIL_COUNT : failCount + 1;
 
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error(`[Pulsar] OAuthSessionIDMissing Response. Polling has been aborted.`);
-        await stopPolling('Login to Pulsar Failed. Please try again.');
+        console.error(`[useDiscordAuth][pollSession] OAuthSessionIDMissing Response. Polling has been aborted.`);
+        await abortAuthPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
 
@@ -127,8 +127,8 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
     catch (error) {
       const nextFailCount = failCount + 1;
       if (nextFailCount >= OAUTH_POLL_FAIL_COUNT) {
-        console.error('[Pulsar] OAuthSessionNetworkError. Polling has been aborted.', error);
-        await stopPolling('Login to Pulsar Failed. Please try again.');
+        console.error('[useDiscordAuth][pollSession] OAuthSessionNetworkError. Polling has been aborted.', error);
+        await abortAuthPolling('Login to Pulsar Failed. Please try again.');
         return;
       }
       pollTimeoutRef.current = setTimeout(() => {
@@ -143,7 +143,7 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
       try {
         const response = await fetch(getEndpoint('/oauth/login'));
         if (!response.ok) {
-          throw new Error(`[Pulsar] OAuthLoginFailed: Endpoint Returned Failure. Status: ${response.status}`);
+          throw new Error(`OAuthLoginFailed: Endpoint Returned Failure. Status: ${response.status}`);
         }
         const data = (await response.json()) as LoginResponse;
         const tab = await browser.tabs.create({ url: data.redirect });
@@ -152,7 +152,7 @@ export function useDiscordAuth(useAppSession: AppUseSession): {
         void pollSession(data.sessionId, 0);
       }
       catch (error) {
-        console.error('[Pulsar] OAuthLoginFailed. Login has been aborted.', error);
+        console.error('[useDiscordAuth][handleDiscordLogin] OAuthLoginFailed. Login has been aborted.', error);
         setIsLoggingIn(false);
         showAuthError('Login to Pulsar Failed. Please try again.');
       }
