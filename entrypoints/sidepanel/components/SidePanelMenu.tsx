@@ -44,10 +44,17 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
 
   // Effect to Load Access Cache to Foreground from Background Script
   useEffect(() => {
-    console.info('[SidepanelMenu] showCreateGroupModal or guildId changed, validating if access cache load is needed.', { showCreateGroupModal, guildId });
+    console.debug('[SidepanelMenu] showCreateGroupModal or guildId changed, validating if access cache load is needed.');
     // Prevent Run and Cleanup State on Close
     if (!showCreateGroupModal) {
       setIsGuildDropdownOpen(false);
+      return;
+    }
+
+    // Blank Access Cache on Render Change
+    if (useAuthentication.sessionToken === null) {
+      console.debug('[SidepanelMenu] sessionToken is null. User is not authenticated, so removing cached userAccess.');
+      setUserAccess([]);
       return;
     }
 
@@ -62,7 +69,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
           setUserAccess([]);
         }
       });
-    console.info('[SidepanelMenu] Requested Access Cache from background script for guild dropdown.', { showCreateGroupModal, guildId, userAccess });
+    console.debug('[SidepanelMenu] Requested Access Cache from background script for guild dropdown.');
   }, [showCreateGroupModal, genericValidationReject, guildValidationReject, groupNameValidationReject]);
 
   // Effect to Handle Click Outside of Guild Dropdown to Close Dropdown
