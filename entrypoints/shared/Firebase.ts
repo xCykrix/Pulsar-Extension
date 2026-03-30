@@ -3,7 +3,7 @@ import { getToken, type Messaging } from 'firebase/messaging';
 import { getMessaging as getMessagingSW, isSupported as isSupportedSW, type Messaging as MessagingSW } from 'firebase/messaging/sw';
 import { fetchAndActivate, getRemoteConfig, getValue, isSupported as isRemoteConfigSupported, type RemoteConfig } from 'firebase/remote-config';
 import { browser } from 'wxt/browser';
-import { FIREBASE, getEndpoint } from './const.ts';
+import { FIREBASE, getEndpoint } from '../Constants.ts';
 
 export class Firebase {
   private static instance: FirebaseApp | null = null;
@@ -21,7 +21,7 @@ export class Firebase {
   }
 
   // deno-lint-ignore require-await
-  public static async getFirebaseMessagingServiceWorker(): Promise<Messaging> {
+  public static async getFirebaseMessagingBackground(): Promise<Messaging> {
     // Ensure App
     this.initialize();
 

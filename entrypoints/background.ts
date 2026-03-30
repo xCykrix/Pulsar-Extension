@@ -2,9 +2,9 @@ import { type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw'
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { AccessCache } from './shared/cache.ts';
-import { getEndpoint } from './shared/const.ts';
-import { Firebase } from './shared/firebase.ts';
+import { AccessCache } from './shared/AccessCache.ts';
+import { getEndpoint } from './Constants.ts';
+import { Firebase } from './shared/Firebase.ts';
 
 const FALLBACK_NOTIFICATION_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7f7p4AAAAASUVORK5CYII=';
 const BACKGROUND_FCM_LOG_PREFIX = '[Pulsar FCM][background]';
@@ -110,7 +110,7 @@ export default defineBackground(() => {
 });
 
 async function initializeFirebaseMessaging(): Promise<void> {
-  const messaging = await Firebase.getFirebaseMessagingServiceWorker();
+  const messaging = await Firebase.getFirebaseMessagingBackground();
 
   onBackgroundMessage(messaging, (payload: MessagePayload) => {
     console.info(`${BACKGROUND_FCM_LOG_PREFIX} Received Background Message Proxied.`, payload);

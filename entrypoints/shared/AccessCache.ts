@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { getEndpoint } from './const.ts';
+import { getEndpoint } from '../Constants.ts';
 
 export interface UserAccess {
   discordUserId: string;
@@ -50,28 +50,31 @@ export class AccessCache {
   private static lastUpdatedAt: Date | null = null;
 
   public static async refresh(): Promise<void> {
+    console.debug('[AccessCache][refresh] Refreshing AccessCache...');
     const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
 
     if (!sessionToken) {
-      console.warn('[AccessCache] No session token found, skipping access cache refresh.');
+      console.warn('[AccessCache][refresh] User is not authenticated. Refresh of AccessCache aborted.');
       this.lastUpdateSuccessful = false;
       return;
     }
 
+    const signal = AbortSignal.timeout(5000); // 10 second timeout
     const response = await fetch(getEndpoint('/ui/getAccess'), {
       headers: {
         Authorization: `Bearer ${sessionToken}`,
       },
+      signal,
     });
 
     if (!response.ok) {
-      console.error(`[AccessCache] Failed to fetch /ui/getAccess: ${response.status} ${response.statusText}`);
+      console.error(`[AccessCache][refresh] Failed to fetch /ui/getAccess: ${response.status} ${response.statusText}`);
       this.lastUpdateSuccessful = false;
       return;
     }
 
     const json: GetAccessResponse = await response.json().catch((err) => {
-      console.error('[AccessCache] Failed to parse /ui/getAccess response as JSON.', err);
+      console.error('[AccessCache][refresh] Failed to parse /ui/getAccess response as JSON.', err);
       this.lastUpdateSuccessful = false;
       return { userAccess: [], channelAccess: [], categoriesByGuild: {} };
     });
@@ -113,6 +116,7 @@ export class AccessCache {
     lastUpdatedAt: Date | null;
     lastUpdateSuccessful: boolean;
   }> {
+    console.debug('[AccessCache][getLatestData] Getting latest AccessCache data...');
     await this.refresh();
 
     return {
