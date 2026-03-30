@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/const.ts';
 
@@ -25,13 +25,10 @@ export interface UseAuthentication {
 
 let storageListener: ((changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) | null = null;
 
-function logOutSession(): void {
-  console.debug('[useAuthentication][logOutSession] Logging out session.');
-  browser.storage.local.remove(['user', 'sessionToken', 'fcmToken']);
-}
-
 export function useAuthentication(): UseAuthentication {
   // Stored Local Session States
+  const [initializing, setInitializing] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
@@ -46,8 +43,8 @@ export function useAuthentication(): UseAuthentication {
   const pollStartRef = useRef<number | null>(null);
   const oauthTabIdRef = useRef<number | null>(null);
 
-  // Register Change Listeners
-  if (storageListener === null) {
+  if (!initialized && !initializing) {
+    setInitializing(true);
     console.debug('[useAuthentication] Initializing session state from storage and setting up storage listener.');
     void browser.storage.local.get(['user', 'sessionToken', 'fcmToken']).then((result) => {
       const storedUser = (result as { user?: SessionUser }).user ?? null;
@@ -56,10 +53,18 @@ export function useAuthentication(): UseAuthentication {
       setUser(storedUser);
       setSessionToken(storedSessionToken);
       setFcmToken(storedFcmToken);
+      setInitialized(true);
       console.debug('[useAuthentication] Session state initialized from storage.');
     });
+  }
 
+  // Register Change Listeners
+  if (storageListener === null) {
     storageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>): void => {
+      if (!initialized) {
+        console.debug('[useAuthentication][storageListener] Storage changed before initial session state was loaded. Ignoring change event.');
+        return;
+      }
       console.debug('[useAuthentication][storageListener] Storage changed, updating session state.');
       if ('user' in changes) {
         console.debug('[useAuthentication][storageListener] User changed, updating user state.');
@@ -79,9 +84,13 @@ export function useAuthentication(): UseAuthentication {
   }
 
   useEffect(() => {
+    if (!initialized) {
+      console.debug('[useAuthentication][useEffect] Session state not yet initialized from storage. Skipping persistence for caching.');
+      return;
+    }
     console.debug('[useAuthentication] Persisting session state to storage.');
     void browser.storage.local.set({ user, sessionToken, fcmToken });
-  }, [user, sessionToken, fcmToken]);
+  }, [user, sessionToken, fcmToken, initialized]);
 
   useEffect(() => {
     return () => {
@@ -205,8 +214,12 @@ export function useAuthentication(): UseAuthentication {
     setIsLoggingIn(true);
     void (async () => {
       try {
-        const response = await fetch(getEndpoint('/oauth/login'));
+        const signal = AbortSignal.timeout(5000);
+        const response = await fetch(getEndpoint('/oauth/login'), {
+          signal,
+        });
         if (!response.ok) {
+          setAuthError('Login to Pulsar Failed due to API Response. Please try again.');
           throw new Error(`OAuthLoginFailed: Endpoint Returned Failure. Status: ${response.status}`);
         }
         const data = (await response.json()) as LoginResponse;
@@ -223,7 +236,27 @@ export function useAuthentication(): UseAuthentication {
     })();
   };
 
-  return { user, sessionToken, fcmToken, setUser, setSessionToken, setFcmToken, logOutSession, isLoggingIn, authError, startDiscordLogin, dismissAuthError };
+  return {
+    user,
+    sessionToken,
+    fcmToken,
+    setUser,
+    setSessionToken,
+    setFcmToken,
+    logOutSession: () => {
+      {
+        console.debug('[useAuthentication][logOutSession] Logging out session.');
+        setUser(null);
+        setSessionToken(null);
+        setFcmToken(null);
+        browser.storage.local.remove(['user', 'sessionToken', 'fcmToken']);
+      }
+    },
+    isLoggingIn,
+    authError,
+    startDiscordLogin,
+    dismissAuthError,
+  };
 }
 
 interface LoginResponse {
