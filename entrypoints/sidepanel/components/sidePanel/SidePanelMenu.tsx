@@ -1,8 +1,9 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import type { AccessCache, UserAccess } from '../../shared/cache.ts';
-import { getEndpoint } from '../../shared/const.ts';
-import { UseAuthentication } from '../hooks/useAuthentication.ts';
+import type { AccessCache, UserAccess } from '../../../shared/cache.ts';
+import { getEndpoint } from '../../../shared/const.ts';
+import type { UseAuthentication } from '../../hooks/useAuthentication.ts';
+import { KeywordInput } from './KeywordInput.tsx';
 
 export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessage, onClose, onCreateGroup }: {
   useAuthentication: UseAuthentication;
@@ -21,6 +22,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
   const [genericValidationReject, setGenericValidationReject] = useState<'InternalServerError' | 'REJECT' | 'OK'>('OK');
   const [guildValidationReject, setGuildValidationReject] = useState<'IF-GUILD-REJECT' | 'OK'>('OK');
   const [groupNameValidationReject, setGroupNameValidationReject] = useState<'IF-GROUP-NAME-REJECT' | 'OK'>('OK');
+  const [keywordsValidationReject, setKeywordsValidationReject] = useState<'IF-KEYWORDS-REJECT' | 'OK'>('OK');
 
   // Guild Selector
   const [guildId, setGuildId] = useState<string>('');
@@ -34,9 +36,14 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
   const [endTime, setEndTime] = useState<string | null>(null);
   const [startMeridiem, setStartMeridiem] = useState<'AM' | 'PM'>('AM');
   const [endMeridiem, setEndMeridiem] = useState<'AM' | 'PM'>('PM');
+  const [keywords, setKeywords] = useState('');
 
   // Derived References to Components
   const guildDropdownRef = useRef<HTMLDivElement | null>(null);
+  const selectedGuildAccess = userAccess.find((guild) => guild.guildId === guildId) ?? null;
+  const keywordCount = getKeywordCount(keywords);
+  const keywordLimit = selectedGuildAccess?.maxKeywordsPerNotificationGroup ?? null;
+  const isKeywordCountExceeded = keywordLimit !== null && keywordCount > keywordLimit;
 
   // Quick Helper Functions
   const TIME_REGEX = /^(0?[1-9]|1[0-2]):[0-5][0-9]$/;
@@ -44,7 +51,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
 
   // Effect to Load Access Cache to Foreground from Background Script
   useEffect(() => {
-    console.debug('[SidepanelMenu] showCreateGroupModal or guildId changed, validating if access cache load is needed.');
+    console.debug('[SidePanelMenu] showCreateGroupModal or guildId changed, validating if access cache load is needed.');
     // Prevent Run and Cleanup State on Close
     if (!showCreateGroupModal) {
       setIsGuildDropdownOpen(false);
@@ -53,7 +60,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
 
     // Blank Access Cache on Render Change
     if (useAuthentication.sessionToken === null) {
-      console.debug('[SidepanelMenu] sessionToken is null. User is not authenticated, so removing cached userAccess.');
+      console.debug('[SidePanelMenu] sessionToken is null. User is not authenticated, so removing cached userAccess.');
       setUserAccess([]);
       return;
     }
@@ -69,7 +76,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
           setUserAccess([]);
         }
       });
-    console.debug('[SidepanelMenu] Requested Access Cache from background script for guild dropdown.');
+    console.debug('[SidePanelMenu] Requested Access Cache from background script for guild dropdown.');
   }, [showCreateGroupModal, genericValidationReject, guildValidationReject, groupNameValidationReject]);
 
   // Effect to Handle Click Outside of Guild Dropdown to Close Dropdown
@@ -97,6 +104,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
       setGenericValidationReject('OK');
       setGuildValidationReject('OK');
       setGroupNameValidationReject('OK');
+      setKeywordsValidationReject('OK');
       return;
     }
     setIsInflightValidating(true);
@@ -108,6 +116,9 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
 
         // Clear Rejections
         setGenericValidationReject('OK');
+        setGuildValidationReject('OK');
+        setGroupNameValidationReject('OK');
+        setKeywordsValidationReject('OK');
 
         try {
           if (useAuthentication.sessionToken === null) {
@@ -115,7 +126,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
           }
 
           // Inflight Validation Endpoint Generation
-          const validationTypes: ('IF-GUILD' | 'IF-GROUP-NAME')[] = ['IF-GUILD'];
+          const validationTypes: ('IF-GUILD' | 'IF-GROUP-NAME' | 'IF-KEYWORDS')[] = ['IF-GUILD'];
           const guildInflightValidationEndpoint = new URL(getEndpoint('/ui/createUserGroup'));
 
           // Load Inflight Validations
@@ -123,6 +134,10 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
           if (groupName !== '') {
             validationTypes.push('IF-GROUP-NAME');
             guildInflightValidationEndpoint.searchParams.set('groupName', groupName);
+          }
+          if (keywords !== '') {
+            validationTypes.push('IF-KEYWORDS');
+            guildInflightValidationEndpoint.searchParams.set('keywords', keywords);
           }
 
           // Perform Inflight Validation Request
@@ -148,16 +163,21 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
             setGroupNameValidationReject('IF-GROUP-NAME-REJECT');
             return;
           }
+          if (headers.includes('IF-KEYWORDS')) {
+            setKeywordsValidationReject('IF-KEYWORDS-REJECT');
+            return;
+          }
 
           setGuildValidationReject('OK');
           setGroupNameValidationReject('OK');
+          setKeywordsValidationReject('OK');
           setIsInflightValidating(false);
         }
         catch (error) {
           console.error('[CreateGroup] Modal Validation Endpoint Error', error);
         }
 
-        console.info('[CreateGroup] Modal Validation Endpoint Success', { guildValidationReject, groupNameValidationReject, isInflightValidating });
+        console.debug('[CreateGroup] Modal Validation Endpoint Success', { guildValidationReject, groupNameValidationReject, keywordsValidationReject, keywordCount, isInflightValidating });
       };
 
       void checkValidation();
@@ -166,7 +186,7 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
     return () => {
       clearTimeout(validationDebounceTimeout);
     };
-  }, [showCreateGroupModal, isGuildDropdownOpen, guildId, groupName]);
+  }, [showCreateGroupModal, isGuildDropdownOpen, guildId, groupName, keywords]);
 
   return (
     <>
@@ -196,10 +216,12 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
             setEndTime(null);
             setStartMeridiem('AM');
             setEndMeridiem('PM');
+            setKeywords('');
             setIsInflightValidating(false);
             setGenericValidationReject('InternalServerError');
             setGuildValidationReject('IF-GUILD-REJECT');
             setGroupNameValidationReject('IF-GROUP-NAME-REJECT');
+            setKeywordsValidationReject('IF-KEYWORDS-REJECT');
             setShowCreateGroupModal(true);
           }}
         >
@@ -367,10 +389,20 @@ export function SidePanelMenu({ useAuthentication, isOpen, fcmAverage, lastMessa
                 {endTime !== null && !isTimeValid(endTime) && <span className='mt-1 block w-full text-center text-[11px] text-error'>Use 8:00 or 08:00 AM/PM</span>}
               </label>
             </div>
+            <KeywordInput
+              value={keywords}
+              onChange={setKeywords}
+              disabled={guildId === ''}
+              errorText={isKeywordCountExceeded ? `Keyword limit exceeded. ${keywordCount}/${keywordLimit} keywords.` : keywords !== '' && keywordsValidationReject !== 'OK' ? 'Invalid Keywords.' : undefined}
+              keywordCount={keywordCount}
+              keywordLimit={keywordLimit}
+              rows={5}
+            />
+            <div className='h-2' aria-hidden='true' />
           </div>
           <div className='flex justify-end gap-2'>
             <button className='btn btn-ghost' type='button' onClick={() => setShowCreateGroupModal(false)}>Cancel</button>
-            <button className='btn btn-primary' type='button' disabled={!guildId || isInflightValidating || genericValidationReject !== 'OK' || guildValidationReject !== 'OK' || groupName.trim() === '' || ((startTime === null && endTime !== null) || (startTime !== null && endTime === null)) || !isTimeValid(startTime) || !isTimeValid(endTime)} onClick={() => setShowCreateGroupModal(false)}>Create</button>
+            <button className='btn btn-primary' type='button' disabled={!guildId || isInflightValidating || genericValidationReject !== 'OK' || guildValidationReject !== 'OK' || groupName.trim() === '' || ((startTime === null && endTime !== null) || (startTime !== null && endTime === null)) || !isTimeValid(startTime) || !isTimeValid(endTime) || keywordsValidationReject !== 'OK' || isKeywordCountExceeded} onClick={() => setShowCreateGroupModal(false)}>Create</button>
           </div>
         </div>
         <label className='modal-backdrop' onClick={() => setShowCreateGroupModal(false)} />
@@ -391,4 +423,8 @@ function formatTimeInput(value: string): string {
   }
 
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function getKeywordCount(value: string): number {
+  return value.match(/(?:^|\s)[+-](?=\S)/g)?.length ?? 0;
 }

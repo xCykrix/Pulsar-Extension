@@ -3,7 +3,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 // import { getGuildOptions } from '../shared/access-cache.ts';
-import { SidePanelMenu } from './components/SidePanelMenu.tsx';
+import { SidePanelMenu } from './components/sidePanel/SidePanelMenu.tsx';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
