@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { FCM_REGISTER_POLL_RATE } from '../../Constants.ts';
+import { FCM_REGISTER_POLL_RATE } from '../../shared/Constants.ts';
 import { Firebase } from '../../shared/Firebase.ts';
 import type { UseAuthentication } from './useAuthentication.ts';
 

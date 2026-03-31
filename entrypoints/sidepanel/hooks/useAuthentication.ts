@@ -1,6 +1,6 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../Constants.ts';
+import { getEndpoint, OAUTH_POLL_FAIL_COUNT, OAUTH_POLL_MS, OAUTH_POLL_TTL } from '../../shared/Constants.ts';
 
 export interface SessionUser {
   id: string;

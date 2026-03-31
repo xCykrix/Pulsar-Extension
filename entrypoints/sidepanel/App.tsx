@@ -3,78 +3,88 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 // import { getGuildOptions } from '../shared/access-cache.ts';
-import { SidePanelMenu } from './components/sidePanel/SidePanelMenu.tsx';
+// import { SidePanelMenu } from './components/sideMenu/SideMenu.tsx';
+import { MessageType, MessagingService } from '../shared/MessagingService.ts';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
-interface SidepanelFcmMessage {
-  type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
-  notification: {
-    title?: string;
-    body?: string;
-  };
-  sentAtMs?: number;
-  receivedAtMs?: number;
-}
-
 export function App(): ReactElement {
+  // Authentication and Device Registration to FCM
   const appUseAuthentication: UseAuthentication = useAuthentication();
+  useFirebaseTokenRegistration({ useAuthentication: appUseAuthentication });
 
+  // Menu Control
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+
+  // Toast Notification Control
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
-  const [lastDataAt, setLastDataAt] = useState<number | null>(null);
-  const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | null>(null);
-  const [secondsSinceData, setSecondsSinceData] = useState<number>(0);
-  const [connectionStatus, setConnectionStatus] = useState<'OK' | 'ERROR' | 'PENDING'>('PENDING');
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Metrics Control
+  const [lastDataAt, setLastDataAt] = useState<number>(-1);
+  const [connected, setConnected] = useState<'OK' | 'ERROR' | 'PENDING'>('PENDING');
+  const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | 'N/A'>('N/A');
+  const [secondsSinceData, setSecondsSinceData] = useState<number | 'N/A'>('N/A');
+
+  // Message Processor
   useEffect(() => {
-    const handleBackgroundMessage = (message: unknown): void => {
-      // Handle Status Check Pings
-      if (typeof message === 'object' && message !== null && (message as { type?: string }).type === 'PULSAR/STATUS_CHECK') {
-        const status = (message as { status?: string }).status;
-        setConnectionStatus(status as 'OK' | 'ERROR' | 'PENDING');
-        return;
-      }
+    const handle = (message: unknown): void => {
+      MessagingService.stack<{
+        status: 'OK' | 'ERROR' | 'PENDING';
+      }>(
+        MessageType.STATUS_CHECK,
+        message,
+        async (statusMessage) => {
+          if (statusMessage.status === 'OK') {
+            setConnected('OK');
+          }
+          else {
+            setConnected('ERROR');
+          }
+        },
+      );
 
-      // Fallback to FCM Message
-      if (!isSidepanelFcmMessage(message)) {
-        return;
-      }
+      MessagingService.stack<{
+        type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
+        notification: {
+          title?: string;
+          body?: string;
+        };
+        sentAtMs?: number;
+        receivedAtMs?: number;
+      }>(
+        MessageType.FCM_NOTIFICATION,
+        message,
+        async (fcm) => {
+          const receivedAtMs = fcm.receivedAtMs ?? Date.now();
+          if (fcm.sentAtMs !== undefined) {
+            setDeliveryLatencyMs(receivedAtMs - fcm.sentAtMs);
+          }
+          setLastDataAt(receivedAtMs);
+          // setFcmToast({ title, body });
 
-      const title = message.notification.title ?? 'FCM Message Received';
-      const body = message.notification.body ?? 'A new push payload arrived.';
-      const receivedAt = message.receivedAtMs ?? Date.now();
-
-      if (message.sentAtMs !== undefined) {
-        setDeliveryLatencyMs(Math.max(0, receivedAt - message.sentAtMs));
-      }
-      else {
-        setDeliveryLatencyMs(null);
-      }
-
-      setLastDataAt(receivedAt);
-      setFcmToast({ title, body });
-      if (toastTimeoutRef.current !== null) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-      toastTimeoutRef.current = setTimeout(() => {
-        setFcmToast(null);
-        toastTimeoutRef.current = null;
-      }, 5000);
+          if (toastTimeoutRef.current !== null) {
+            clearTimeout(toastTimeoutRef.current);
+          }
+          toastTimeoutRef.current = setTimeout(() => {
+            setFcmToast(null);
+            toastTimeoutRef.current = null;
+          }, 5000);
+        },
+      );
     };
-
-    browser.runtime.onMessage.addListener(handleBackgroundMessage);
+    browser.runtime.onMessage.addListener(handle);
 
     return () => {
-      browser.runtime.onMessage.removeListener(handleBackgroundMessage);
+      browser.runtime.onMessage.removeListener(handle);
       if (toastTimeoutRef.current !== null) {
         clearTimeout(toastTimeoutRef.current);
         toastTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [toastTimeoutRef]);
 
+  // Tick Seconds Since Data Interval
   useEffect(() => {
     if (lastDataAt === null) {
       setSecondsSinceData(0);
@@ -90,24 +100,6 @@ export function App(): ReactElement {
       clearInterval(intervalId);
     };
   }, [lastDataAt]);
-
-  useEffect(() => {
-    if (!isMenuExpanded) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setIsMenuExpanded(false);
-      }
-    };
-
-    globalThis.addEventListener('keydown', handleKeyDown);
-    return () => {
-      globalThis.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isMenuExpanded]);
-  useFirebaseTokenRegistration({ useAuthentication: appUseAuthentication });
 
   return (
     <div className='flex min-h-screen flex-col bg-base-300 p-4'>
@@ -229,52 +221,15 @@ export function App(): ReactElement {
               <p className='text-sm opacity-70'>Your sidepanel is ready for the next step.</p>
             </div>
           </div>
-
-          <SidePanelMenu
-            useAuthentication={appUseAuthentication}
-            fcmAverage={deliveryLatencyMs === null ? 'N/A' : formatSecondsFromMilliseconds(deliveryLatencyMs)}
-            isOpen={isMenuExpanded}
-            lastMessage={lastDataAt === null ? 'N/A' : `${secondsSinceData}s`}
-            onClose={() => {
-              setIsMenuExpanded(false);
-            }}
-          />
         </div>
 
         <footer className='mt-auto border-t border-base-300/60 px-1 pt-1 text-[10px] leading-relaxed opacity-50 min-h-[2.7em] md:min-h-0'>
-          <div className='w-full md:grid md:grid-cols-3 md:items-center md:gap-0 flex flex-row justify-between items-end gap-1 md:flex-none'>
-            {/* Left: Connection Status (always left) */}
+          <div className='w-full flex items-center justify-between gap-1'>
             <span className='text-left text-[clamp(9px,2.5vw,12px)]'>
-              {connectionStatus === 'PENDING' ? '\u{1f7e1}' : connectionStatus === 'OK' ? '\u{1f7e2}' : '\u{1f534}'}
+              {connected === 'PENDING' ? '\u{1f7e1}' : connected === 'OK' ? '\u{1f7e2}' : '\u{1f534}'}
             </span>
-            {/* Center: Copyright (centered on md+, right-aligned and stacked with sponsored on mobile) */}
-            <span className='hidden md:block text-center text-[clamp(9px,2.5vw,12px)]'>
-              <span className='whitespace-nowrap'>
-                Copyright (c) 2026 - Pulsar by{' '}
-                <a
-                  className='link link-hover font-medium whitespace-nowrap'
-                  href='https://github.com/amethyst-studio'
-                  rel='noreferrer'
-                  target='_blank'
-                >
-                  Amethyst&nbsp;Studio
-                </a>
-              </span>
-            </span>
-            {/* Right: Sponsored (right on md+) */}
-            <span className='hidden md:block text-right text-[clamp(9px,2.5vw,12px)]'>
-              Sponsored by{' '}
-              <a
-                className='link link-hover font-medium'
-                href='https://passivecollectibles.com/'
-                rel='noreferrer'
-                target='_blank'
-              >
-                Passive Collectibles
-              </a>
-            </span>
-            {/* Mobile stacked version: right-aligned, both on same row as flex children */}
-            <span className='flex-col items-end text-right md:hidden flex text-[clamp(7px,1.5vw,10px)] leading-tight max-w-full'>
+
+            <span className='flex flex-col items-end text-right text-[clamp(9px,2.5vw,12px)] max-w-[65%]'>
               <span className='whitespace-nowrap truncate max-w-full'>
                 Copyright (c) 2026 - Pulsar by{' '}
                 <a
@@ -303,15 +258,4 @@ export function App(): ReactElement {
       </div>
     </div>
   );
-}
-
-function formatSecondsFromMilliseconds(durationMs: number): string {
-  return `${(durationMs / 1000).toFixed(2)}s`;
-}
-
-function isSidepanelFcmMessage(message: unknown): message is SidepanelFcmMessage {
-  if (message === null || typeof message !== 'object') {
-    return false;
-  }
-  return (message as { type?: string }).type === 'PULSAR/FCM_SIDEPANEL_MESSAGE';
 }
