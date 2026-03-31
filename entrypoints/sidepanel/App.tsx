@@ -2,9 +2,8 @@
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-// import { getGuildOptions } from '../shared/access-cache.ts';
-// import { SidePanelMenu } from './components/sideMenu/SideMenu.tsx';
 import { MessageType, MessagingService } from '../shared/MessagingService.ts';
+import { MarqueeText } from './components/utility/MarqueeText.tsx';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
@@ -21,7 +20,7 @@ export function App(): ReactElement {
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Metrics Control
-  const [lastDataAt, setLastDataAt] = useState<number>(-1);
+  const [lastDataAt, setLastDataAt] = useState<number>(Date.now());
   const [connected, setConnected] = useState<'OK' | 'ERROR' | 'PENDING'>('PENDING');
   const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | 'N/A'>('N/A');
   const [secondsSinceData, setSecondsSinceData] = useState<number | 'N/A'>('N/A');
@@ -29,7 +28,7 @@ export function App(): ReactElement {
   // Message Processor
   useEffect(() => {
     const handle = (message: unknown): void => {
-      MessagingService.stack<{
+      MessagingService.fstack<{
         status: 'OK' | 'ERROR' | 'PENDING';
       }>(
         MessageType.STATUS_CHECK,
@@ -41,11 +40,12 @@ export function App(): ReactElement {
           else {
             setConnected('ERROR');
           }
+
+          await Promise.resolve();
         },
       );
 
-      MessagingService.stack<{
-        type: 'PULSAR/FCM_SIDEPANEL_MESSAGE';
+      MessagingService.fstack<{
         notification: {
           title?: string;
           body?: string;
@@ -70,6 +70,8 @@ export function App(): ReactElement {
             setFcmToast(null);
             toastTimeoutRef.current = null;
           }, 5000);
+
+          await Promise.resolve();
         },
       );
     };
@@ -87,7 +89,7 @@ export function App(): ReactElement {
   // Tick Seconds Since Data Interval
   useEffect(() => {
     if (lastDataAt === null) {
-      setSecondsSinceData(0);
+      setSecondsSinceData('N/A');
       return;
     }
 
@@ -139,7 +141,7 @@ export function App(): ReactElement {
                 className='btn btn-ghost btn-square btn-sm shrink-0'
                 aria-label={isMenuExpanded ? 'Close menu' : 'Open menu'}
                 aria-expanded={isMenuExpanded}
-                aria-controls='sidepanel-popout-menu'
+                aria-controls='sidepanel-persistent-menu'
                 onClick={() => {
                   setIsMenuExpanded((current) => !current);
                 }}
@@ -214,11 +216,52 @@ export function App(): ReactElement {
           </div>
         </header>
 
-        <div className='relative flex flex-1 rounded-box'>
-          <div className={`card flex-1 border border-base-300 bg-base-200 shadow-lg transition-[filter,opacity] duration-200 ${isMenuExpanded ? 'opacity-60 blur-[1px]' : 'opacity-100'}`}>
+        <div className='flex flex-1 gap-2 overflow-hidden'>
+          <aside
+            id='sidepanel-persistent-menu'
+            className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? 'w-[25%] min-w-[10rem]' : 'w-14'}`}
+            aria-label='Side menu'
+          >
+            <nav className='flex flex-col gap-1'>
+              <button type='button' className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>＋</span>
+                <span className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}>Create Group</span>
+              </button>
+              <div className='my-2 border-t border-base-300/40' aria-hidden='true' />
+              <button type='button' className={`btn btn-ghost btn-sm ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>E</span>
+                {isMenuExpanded ? <MarqueeText hold={5000} className='truncate text-[clamp(0.6rem,1.0vw,0.8125rem)]'>Ascended Heroes Elite Trainer Box</MarqueeText> : null}
+              </button>
+              <button type='button' className={`btn btn-ghost btn-sm ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>E</span>
+                {isMenuExpanded ? <MarqueeText hold={5000} className='truncate text-[clamp(0.6rem,1.0vw,0.8125rem)]'>Test</MarqueeText> : null}
+              </button>
+            </nav>
+
+            <div className='mt-auto rounded-lg border border-base-300/70 bg-base-200/70 p-2 text-[10px] leading-relaxed opacity-70'>
+              {isMenuExpanded
+                ? (
+                  <>
+                    <p>Last Message: {secondsSinceData === 'N/A' ? 'N/A' : `${secondsSinceData}s`}</p>
+                    <p>FCM Average: {deliveryLatencyMs === 'N/A' ? 'N/A' : `${Math.floor(deliveryLatencyMs / 1000)}s`}</p>
+                  </>
+                )
+                : (
+                  <div className='flex flex-col items-center gap-0'>
+                    <span className='text-xs font-semibold'>
+                      {secondsSinceData === 'N/A' ? 'N/A' : `${secondsSinceData}s`}
+                    </span>
+                    <span className='text-[10px] opacity-70'>
+                      {deliveryLatencyMs === 'N/A' ? 'N/A' : `${Math.floor(deliveryLatencyMs / 1000)}s`}
+                    </span>
+                  </div>
+                )}
+            </div>
+          </aside>
+
+          <div className='card flex-1 border border-base-300 bg-base-200 shadow-lg'>
             <div className='card-body text-center'>
-              <h1 className='text-2xl font-bold'>Hello world</h1>
-              <p className='text-sm opacity-70'>Your sidepanel is ready for the next step.</p>
+              <h1 className='text-2xl font-bold'>(...)</h1>
             </div>
           </div>
         </div>

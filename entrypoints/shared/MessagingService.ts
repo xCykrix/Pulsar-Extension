@@ -1,6 +1,8 @@
 export enum MessageType {
-  STATUS_CHECK = 'PULSAR/STATUS_CHECK',
+  // FCM_FOREGRUND_MESSAGE = 'PULSAR/FCM_FOREGROUND_MESSAGE',
   FCM_NOTIFICATION = 'PULSAR/FCM_SIDEPANEL_MESSAGE',
+  STATUS_CHECK = 'PULSAR/STATUS_CHECK',
+  GET_ACCESS_CACHE = 'PULSAR/GET_ACCESS_CACHE',
 }
 
 export class MessagingService {
@@ -14,7 +16,7 @@ export class MessagingService {
     return false;
   }
 
-  public static async stack<T>(type: MessageType, message: unknown, callback: (message: T) => Promise<void>): Promise<void> {
+  public static async fstack<T>(type: MessageType, message: unknown, callback: (message: T) => Promise<void>): Promise<void> {
     if (this.consume(message, type)) {
       await callback(message as T).catch((error) => {
         console.error(`[MessagingService] Callback Error for: ${type}`, error);
