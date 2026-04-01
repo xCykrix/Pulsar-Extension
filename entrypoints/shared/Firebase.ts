@@ -1,5 +1,5 @@
 import { type FirebaseApp, initializeApp } from 'firebase/app';
-import { getToken, type Messaging } from 'firebase/messaging';
+import { getToken, type Messaging, isSupported } from 'firebase/messaging';
 import { getMessaging as getMessagingSW, isSupported as isSupportedSW, type Messaging as MessagingSW } from 'firebase/messaging/sw';
 import { fetchAndActivate, getRemoteConfig, getValue, isSupported as isRemoteConfigSupported, type RemoteConfig } from 'firebase/remote-config';
 import { browser } from 'wxt/browser';
@@ -44,7 +44,7 @@ export class Firebase {
     this.initialize();
 
     // Ensure Supported
-    if (!isSupportedSW()) {
+    if (!isSupported()) {
       throw new Error('Firebase messaging is not supported in this browser context.');
     }
 
@@ -65,7 +65,7 @@ export class Firebase {
     const { fcmToken } = await browser.storage.local.get('fcmToken') as { fcmToken?: string };
 
     if (sessionToken === undefined || sessionToken.trim().length === 0) {
-      console.warn('[Pulsar][Firebase] Session Token required for FCM Registration. Skipping Registration until Authenticated.');
+      console.warn('[Pulsar][Firebase] Session Token required for FCM Registration. Skipping Device Registration until Authenticated.');
       throw new Error('Session Token is required for FCM Registration.');
     }
 

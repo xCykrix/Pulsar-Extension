@@ -2,18 +2,29 @@
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
+import type { UserPinger } from '../logic/UserPingerGroup.ts';
 import { MessageType, MessagingService } from '../shared/MessagingService.ts';
-import { MarqueeText } from './components/utility/MarqueeText.tsx';
+import { AllUserGroupDisplay } from './components/mainPanel/AllUserGroupDisplay.tsx';
+import { BreakdownUserGroupDisplay } from './components/mainPanel/BreakdownUserGroupDisplay.tsx';
+import { CreateGroupDisplay } from './components/mainPanel/CreateGroupDisplay.tsx';
+import { EditGroupDisplay } from './components/mainPanel/EditGroupDisplay.tsx';
+import { MarqueeText } from './components/utility/MarqueeText';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
 export function App(): ReactElement {
+  const [upstart, setUpstart] = useState(false);
+
   // Authentication and Device Registration to FCM
   const appUseAuthentication: UseAuthentication = useAuthentication();
   useFirebaseTokenRegistration({ useAuthentication: appUseAuthentication });
 
-  // Menu Control
+  // Menu Control and State
+  const [currentPanel, setCurrentPanel] = useState<'ALL_GROUP' | 'BREAKDOWN_GROUP' | 'CREATE_GROUP' | 'EDIT_GROUP'>('ALL_GROUP');
+  const [panelGroupSelected, setPanelGroupSelected] = useState<UserPinger | null>(null);
+
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+  const [userPingerGroups, setUserPingerGroups] = useState<UserPinger[]>([]);
 
   // Toast Notification Control
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
@@ -27,20 +38,32 @@ export function App(): ReactElement {
 
   // Message Processor
   useEffect(() => {
-    const handle = (message: unknown): void => {
+    const handle = (internal: unknown): void => {
+      console.info('Received Message in UI:', internal);
+
       MessagingService.fstack<{
         status: 'OK' | 'ERROR' | 'PENDING';
       }>(
-        MessageType.STATUS_CHECK,
-        message,
-        async (statusMessage) => {
-          if (statusMessage.status === 'OK') {
+        MessageType.POST_STATUS,
+        internal,
+        async (message) => {
+          if (message.status === 'OK') {
             setConnected('OK');
           }
           else {
             setConnected('ERROR');
           }
 
+          await Promise.resolve();
+        },
+      );
+
+      MessagingService.fstack<UserPinger[]>(
+        MessageType.POST_USER_PINGER_GROUPS,
+        internal,
+        async (message) => {
+          console.info('upg', message);
+          setUserPingerGroups(message);
           await Promise.resolve();
         },
       );
@@ -54,11 +77,11 @@ export function App(): ReactElement {
         receivedAtMs?: number;
       }>(
         MessageType.FCM_NOTIFICATION,
-        message,
-        async (fcm) => {
-          const receivedAtMs = fcm.receivedAtMs ?? Date.now();
-          if (fcm.sentAtMs !== undefined) {
-            setDeliveryLatencyMs(receivedAtMs - fcm.sentAtMs);
+        internal,
+        async (message) => {
+          const receivedAtMs = message.receivedAtMs ?? Date.now();
+          if (message.sentAtMs !== undefined) {
+            setDeliveryLatencyMs(receivedAtMs - message.sentAtMs);
           }
           setLastDataAt(receivedAtMs);
           // setFcmToast({ title, body });
@@ -103,6 +126,14 @@ export function App(): ReactElement {
     };
   }, [lastDataAt]);
 
+  if (!upstart) {
+    setUpstart(true);
+    browser.runtime.sendMessage({ upstart: true }).catch(() => {
+      // Initial Poll Failure is Non-Critical as Background Polling will Continue.
+    });
+    console.info('Pulsar Upstart Message Sent to Background.');
+  }
+
   return (
     <div className='flex min-h-screen flex-col bg-base-300 p-4'>
       {appUseAuthentication.authError !== null && (
@@ -139,7 +170,7 @@ export function App(): ReactElement {
               <button
                 type='button'
                 className='btn btn-ghost btn-square btn-sm shrink-0'
-                aria-label={isMenuExpanded ? 'Close menu' : 'Open menu'}
+                aria-label={isMenuExpanded ? 'Close Menu' : 'Open Menu'}
                 aria-expanded={isMenuExpanded}
                 aria-controls='sidepanel-persistent-menu'
                 onClick={() => {
@@ -157,7 +188,7 @@ export function App(): ReactElement {
               </div>
               <div className='min-w-0'>
                 <p className='text-[clamp(0.75rem,1.7vw,0.875rem)] font-semibold'>Pulsar</p>
-                <p className='truncate text-[clamp(0.65rem,1.4vw,0.75rem)] opacity-60'>Monitor Notification Companion</p>
+                <p className='truncate text-[clamp(0.65rem,1.4vw,0.75rem)] opacity-60'>Notification Companion</p>
               </div>
             </div>
 
@@ -219,23 +250,86 @@ export function App(): ReactElement {
         <div className='flex flex-1 gap-2 overflow-hidden'>
           <aside
             id='sidepanel-persistent-menu'
-            className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? 'w-[25%] min-w-[10rem]' : 'w-14'}`}
+            style={{ width: isMenuExpanded ? undefined : '3.5rem', maxWidth: isMenuExpanded ? '25%' : undefined }}
+            className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? '' : 'w-14'}`}
             aria-label='Side menu'
           >
             <nav className='flex flex-col gap-1'>
-              <button type='button' className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
+              <button
+                onClick={() => {
+                  setCurrentPanel('CREATE_GROUP');
+                  setPanelGroupSelected(null);
+                }}
+                type='button'
+                className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
+              >
                 <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>＋</span>
-                <span className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}>Create Group</span>
+                <span
+                  className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
+                  style={{ maxWidth: 'calc(100% - 2.5rem)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}
+                >
+                  Create Group
+                </span>
+              </button>
+              <button
+                onClick={() => {
+                  setCurrentPanel('ALL_GROUP');
+                  setPanelGroupSelected(null);
+                }}
+                type='button'
+                className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
+              >
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>＋</span>
+                <span
+                  className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
+                  style={{ maxWidth: 'calc(100% - 2.5rem)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}
+                >
+                  Show All Groups
+                </span>
               </button>
               <div className='my-2 border-t border-base-300/40' aria-hidden='true' />
-              <button type='button' className={`btn btn-ghost btn-sm ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
-                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>E</span>
-                {isMenuExpanded ? <MarqueeText hold={5000} className='truncate text-[clamp(0.6rem,1.0vw,0.8125rem)]'>Ascended Heroes Elite Trainer Box</MarqueeText> : null}
-              </button>
-              <button type='button' className={`btn btn-ghost btn-sm ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}>
-                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>E</span>
-                {isMenuExpanded ? <MarqueeText hold={5000} className='truncate text-[clamp(0.6rem,1.0vw,0.8125rem)]'>Test</MarqueeText> : null}
-              </button>
+
+              {/* Load Groups to UI. */}
+              {userPingerGroups.map((group) => (
+                <div key={group.ulid} className='relative flex items-center'>
+                  <button
+                    onClick={() => {
+                      setCurrentPanel('BREAKDOWN_GROUP');
+                      setPanelGroupSelected(group);
+                    }}
+                    type='button'
+                    className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
+                  >
+                    <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>
+                      {group.name.charAt(0).toUpperCase()}
+                    </span>
+                    <MarqueeText
+                      className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
+                      hold={1200}
+                      style={{ maxWidth: isMenuExpanded ? 'calc(100% - 2.5rem)' : '100%', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' }}
+                    >
+                      {group.name}
+                    </MarqueeText>
+                  </button>
+                  {isMenuExpanded && (
+                    <button
+                      type='button'
+                      className='absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs p-1'
+                      title='Edit Group'
+                      aria-label='Edit Group'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentPanel('EDIT_GROUP');
+                        setPanelGroupSelected(group);
+                      }}
+                    >
+                      <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='2'>
+                        <path strokeLinecap='round' strokeLinejoin='round' d='M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-4.243 1.414 1.414-4.243a4 4 0 01.828-1.414z' />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              ))}
             </nav>
 
             <div className='mt-auto rounded-lg border border-base-300/70 bg-base-200/70 p-2 text-[10px] leading-relaxed opacity-70'>
@@ -261,16 +355,29 @@ export function App(): ReactElement {
 
           <div className='card flex-1 border border-base-300 bg-base-200 shadow-lg'>
             <div className='card-body text-center'>
-              <h1 className='text-2xl font-bold'>(...)</h1>
+              {currentPanel === 'CREATE_GROUP'
+                && <CreateGroupDisplay />}
+              {currentPanel === 'ALL_GROUP'
+                && <AllUserGroupDisplay />}
+              {currentPanel === 'BREAKDOWN_GROUP' && panelGroupSelected !== null
+                && <BreakdownUserGroupDisplay group={panelGroupSelected!} />}
+              {currentPanel === 'EDIT_GROUP' && panelGroupSelected !== null
+                && <EditGroupDisplay group={panelGroupSelected} />}
             </div>
           </div>
         </div>
 
         <footer className='mt-auto border-t border-base-300/60 px-1 pt-1 text-[10px] leading-relaxed opacity-50 min-h-[2.7em] md:min-h-0'>
           <div className='w-full flex items-center justify-between gap-1'>
-            <span className='text-left text-[clamp(9px,2.5vw,12px)]'>
+            <button
+              type='button'
+              className='text-left text-[clamp(9px,2.5vw,12px)] focus:outline-none hover:opacity-80 active:scale-95 transition'
+              title='Refresh'
+              aria-label='Refresh Application'
+              onClick={() => globalThis.window.location.reload()}
+            >
               {connected === 'PENDING' ? '\u{1f7e1}' : connected === 'OK' ? '\u{1f7e2}' : '\u{1f534}'}
-            </span>
+            </button>
 
             <span className='flex flex-col items-end text-right text-[clamp(9px,2.5vw,12px)] max-w-[65%]'>
               <span className='whitespace-nowrap truncate max-w-full'>
@@ -285,7 +392,7 @@ export function App(): ReactElement {
                 </a>
               </span>
               <span className='whitespace-nowrap truncate max-w-full mt-1'>
-                Sponsored by{' '}
+                Designed for and Sponsored by{' '}
                 <a
                   className='link link-hover font-medium'
                   href='https://passivecollectibles.com/'

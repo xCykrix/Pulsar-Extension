@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { getEndpoint } from './Constants.ts';
+import { getEndpoint } from '../shared/Constants.ts';
 
 export interface UserAccess {
   discordUserId: string;

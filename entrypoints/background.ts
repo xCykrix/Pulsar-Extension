@@ -2,7 +2,8 @@ import { type MessagePayload, onBackgroundMessage } from 'firebase/messaging/sw'
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 
-import { AccessCache } from './shared/AccessCache.ts';
+import { AccessCache } from './logic/AccessCache.ts';
+import { UserPingerGroup } from './logic/UserPingerGroup.ts';
 import { getEndpoint } from './shared/Constants.ts';
 import { Firebase } from './shared/Firebase.ts';
 import { MessageType, MessagingService } from './shared/MessagingService.ts';
@@ -30,58 +31,72 @@ export default defineBackground(() => {
   });
 
   // Polling: Status Check in Background and Transmit to UI. Used to provide a physical status indication.
-  setInterval(async () => {
-    const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
-    const statusEndpoint = getEndpoint('/notification/status');
-    console.debug(`${BACKGROUND_FCM_LOG_PREFIX} Running Status Check.`);
+  const pollStatus = async (): Promise<void> => {
+    browser.runtime.sendMessage(
+      await MessagingService.fdispatch(MessageType.POST_STATUS, async () => {
+        const { sessionToken } = await browser.storage.local.get('sessionToken') as { sessionToken?: string };
+        const statusEndpoint = getEndpoint('/notification/status');
+        console.debug(`${BACKGROUND_FCM_LOG_PREFIX} Running Status Check.`);
 
-    if (!sessionToken) {
-      void browser.runtime.sendMessage({
-        type: 'PULSAR/STATUS_CHECK',
-        status: 'PENDING',
-      }).catch(() => {});
-      return;
-    }
+        if (!sessionToken) {
+          return { status: 'PENDING' as const };
+        }
 
-    const signal = AbortSignal.timeout(1000);
-    const response = await fetch(statusEndpoint, {
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-      signal,
-    }).catch(() => null);
+        const signal = AbortSignal.timeout(1000);
+        const response = await fetch(statusEndpoint, {
+          headers: {
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          signal,
+        }).catch(() => null);
 
-    if (response?.ok && response.status === 200) {
-      void browser.runtime.sendMessage({
-        type: 'PULSAR/STATUS_CHECK',
-        status: 'OK',
-      }).catch(() => {});
-    }
-    else if (response?.ok && response.status === 401) {
-      void browser.runtime.sendMessage({
-        type: 'PULSAR/STATUS_CHECK',
-        status: 'PENDING',
-      }).catch(() => {});
-    }
-    else {
-      void browser.runtime.sendMessage({
-        type: 'PULSAR/STATUS_CHECK',
-        status: 'ERROR',
-      }).catch(() => {});
-    }
-  }, 1000);
+        if (response?.ok && response.status === 200) {
+          return { status: 'OK' as const };
+        }
+        else if (response?.ok && response.status === 401) {
+          return { status: 'PENDING' as const };
+        }
+        else {
+          return { status: 'ERROR' as const };
+        }
+      }),
+    ).catch((e) => console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Dispatch Status Message.`, e));
+  };
+  setInterval(pollStatus, 5000);
 
-  // Listen for Foreground Messages to Service Worker.
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-    // OP: GET_ACCESS_CACHE. Side Panel Data Requester.
-    MessagingService.fstack<never>(MessageType.GET_ACCESS_CACHE, message, async () => {
-      const getLatestData = await AccessCache.getLatestData().catch((err) => {
-        console.error(`${BACKGROUND_FCM_LOG_PREFIX} GET_ACCESS_CACHE Failed to Load AccessCache getLatestData().`, err);
-        void sendResponse(null);
-        return null;
-      });
-      void sendResponse(getLatestData);
-    });
+  // Polling: AccessCache Update in Background and Transmit to UI. Updated 10s Interval.
+  const pollAccessCache = async (): Promise<void> => {
+    browser.runtime.sendMessage(
+      await MessagingService.fdispatch(MessageType.POST_ACCESS_CACHE, async () => {
+        const getLatestData = await AccessCache.getLatestData().catch((err) => {
+          console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load AccessCache getLatestData().`, err);
+          throw new Error('Failed to Load AccessCache getLatestData().');
+        });
+        return getLatestData;
+      }),
+    ).catch((e) => console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Dispatch AccessCache Message.`, e));
+  };
+  setInterval(pollAccessCache, 10000);
+
+  // Polling: UserPingerGroups Update in Background and Transmit to UI. Updated 10s Interval.
+  const pollUserPingerGroups = async (): Promise<void> => {
+    browser.runtime.sendMessage(
+      await MessagingService.fdispatch(MessageType.POST_USER_PINGER_GROUPS, async () => {
+        const userPingerGroups = await UserPingerGroup.get().catch((err) => {
+          console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Load UserPingerGroups.`, err);
+          throw new Error('Failed to Load UserPingerGroups.');
+        });
+        return userPingerGroups;
+      }),
+    ).catch((e) => console.error(`${BACKGROUND_FCM_LOG_PREFIX} Failed to Dispatch UserPingerGroups Message.`, e));
+  };
+  setInterval(pollUserPingerGroups, 10000);
+
+  browser.runtime.onMessage.addListener((message: unknown) => {
+    if (typeof message === 'object' && message !== null && 'upstart' in message) {
+      pollAccessCache(); // Initial Immediate Poll
+      pollUserPingerGroups(); // Initial Immediate Poll
+    }
   });
 });
 
