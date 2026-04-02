@@ -8,7 +8,7 @@ import { AllUserGroupDisplay } from './components/mainPanel/AllUserGroupDisplay.
 import { BreakdownUserGroupDisplay } from './components/mainPanel/BreakdownUserGroupDisplay.tsx';
 import { CreateGroupDisplay } from './components/mainPanel/CreateGroupDisplay.tsx';
 import { EditGroupDisplay } from './components/mainPanel/EditGroupDisplay.tsx';
-import { MarqueeText } from './components/utility/MarqueeText';
+import { MarqueeText } from './components/utility/MarqueeText.tsx';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
@@ -62,7 +62,6 @@ export function App(): ReactElement {
         MessageType.POST_USER_PINGER_GROUPS,
         internal,
         async (message) => {
-          console.info('upg', message);
           setUserPingerGroups(message);
           await Promise.resolve();
         },
@@ -303,13 +302,16 @@ export function App(): ReactElement {
                     <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>
                       {group.name.charAt(0).toUpperCase()}
                     </span>
-                    <MarqueeText
-                      className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
-                      hold={1200}
+                    <span
                       style={{ maxWidth: isMenuExpanded ? 'calc(100% - 2.5rem)' : '100%', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' }}
                     >
-                      {group.name}
-                    </MarqueeText>
+                      <MarqueeText
+                        className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
+                        hold={1200}
+                      >
+                        {group.name}
+                      </MarqueeText>
+                    </span>
                   </button>
                   {isMenuExpanded && (
                     <button
