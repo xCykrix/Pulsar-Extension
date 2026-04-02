@@ -2,13 +2,13 @@
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
+import type { UserAccess } from '../logic/AccessCache.ts';
 import type { UserPinger } from '../logic/UserPingerGroup.ts';
 import { MessageType, MessagingService } from '../shared/MessagingService.ts';
 import { AllUserGroupDisplay } from './components/mainPanel/AllUserGroupDisplay.tsx';
 import { BreakdownUserGroupDisplay } from './components/mainPanel/BreakdownUserGroupDisplay.tsx';
 import { CreateGroupDisplay } from './components/mainPanel/CreateGroupDisplay.tsx';
 import { EditGroupDisplay } from './components/mainPanel/EditGroupDisplay.tsx';
-import { MarqueeText } from './components/utility/MarqueeText.tsx';
 import { type UseAuthentication, useAuthentication } from './hooks/useAuthentication.ts';
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
@@ -24,7 +24,10 @@ export function App(): ReactElement {
   const [panelGroupSelected, setPanelGroupSelected] = useState<UserPinger | null>(null);
 
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+  const [isNarrowLayout, setIsNarrowLayout] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(globalThis.window.innerWidth);
   const [userPingerGroups, setUserPingerGroups] = useState<UserPinger[]>([]);
+  const [guildsAvailable, setGuildsAvailable] = useState<Array<{ guildId: string; guildName: string; maxNotificationGroup: number }>>([]);
 
   // Toast Notification Control
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
@@ -36,11 +39,12 @@ export function App(): ReactElement {
   const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | 'N/A'>('N/A');
   const [secondsSinceData, setSecondsSinceData] = useState<number | 'N/A'>('N/A');
 
+  // Constants
+  const cachedGroupNames = userPingerGroups.map((group) => group.name);
+
   // Message Processor
   useEffect(() => {
     const handle = (internal: unknown): void => {
-      console.info('Received Message in UI:', internal);
-
       MessagingService.fstack<{
         status: 'OK' | 'ERROR' | 'PENDING';
       }>(
@@ -63,6 +67,24 @@ export function App(): ReactElement {
         internal,
         async (message) => {
           setUserPingerGroups(message);
+          await Promise.resolve();
+        },
+      );
+
+      MessagingService.fstack<{
+        guildsById: Record<string, UserAccess>;
+      }>(
+        MessageType.POST_ACCESS_CACHE,
+        internal,
+        async (message) => {
+          const nextGuilds = Object.values(message.guildsById ?? {})
+            .map((guildAccess) => ({
+              guildId: guildAccess.guildId,
+              guildName: guildAccess.guildName,
+              maxNotificationGroup: guildAccess.maxNotificationGroup,
+            }))
+            .sort((a, b) => a.guildName.localeCompare(b.guildName));
+          setGuildsAvailable(nextGuilds);
           await Promise.resolve();
         },
       );
@@ -124,6 +146,36 @@ export function App(): ReactElement {
       clearInterval(intervalId);
     };
   }, [lastDataAt]);
+
+  // Detect narrow layouts to switch expanded menu to overlay mode.
+  useEffect(() => {
+    const media = globalThis.matchMedia('(max-width: 600px)');
+    const update = () => {
+      setIsNarrowLayout(media.matches);
+      setViewportWidth(globalThis.window.innerWidth);
+    };
+    update();
+    media.addEventListener('change', update);
+    globalThis.window.addEventListener('resize', update);
+    return () => {
+      media.removeEventListener('change', update);
+      globalThis.window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  const clampedNarrowViewport = Math.max(320, Math.min(viewportWidth, 600));
+  const narrowStartPx = 13.75 * 16; // Matches non-narrow min width at 600px handoff.
+  const narrowEndPx = 0.49 * 320; // About half width at the smallest supported narrow viewport.
+  const t = (600 - clampedNarrowViewport) / (600 - 320);
+  const narrowRawWidthPx = narrowStartPx + (narrowEndPx - narrowStartPx) * t;
+  const narrowMinReadablePx = 12 * 16;
+  const narrowMaxAllowedPx = viewportWidth * 0.92;
+  const narrowOverlayWidthPx = Math.min(narrowMaxAllowedPx, Math.max(narrowMinReadablePx, narrowRawWidthPx));
+  const narrowOverlayWidth = `${narrowOverlayWidthPx}px`;
+  const currentGroupCountByGuild = userPingerGroups.reduce<Record<string, number>>((accumulator, group) => {
+    accumulator[group.guildId] = (accumulator[group.guildId] ?? 0) + 1;
+    return accumulator;
+  }, {});
 
   if (!upstart) {
     setUpstart(true);
@@ -246,11 +298,23 @@ export function App(): ReactElement {
           </div>
         </header>
 
-        <div className='flex flex-1 gap-2 overflow-hidden'>
+        <div className='relative flex flex-1 gap-2 overflow-hidden'>
+          {isNarrowLayout && isMenuExpanded && (
+            <button
+              type='button'
+              className='absolute inset-0 z-20 rounded-box bg-gradient-to-r from-black/80 via-black/70 to-black/60'
+              aria-label='Close Menu Overlay'
+              onClick={() => setIsMenuExpanded(false)}
+            />
+          )}
           <aside
             id='sidepanel-persistent-menu'
-            style={{ width: isMenuExpanded ? undefined : '3.5rem', maxWidth: isMenuExpanded ? '25%' : undefined }}
-            className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? '' : 'w-14'}`}
+            style={{
+              width: isMenuExpanded ? (isNarrowLayout ? narrowOverlayWidth : '13.75rem') : '3.5rem',
+              minWidth: isMenuExpanded ? (isNarrowLayout ? narrowOverlayWidth : '13.75rem') : '3.5rem',
+              maxWidth: isMenuExpanded ? (isNarrowLayout ? narrowOverlayWidth : '13.75rem') : undefined,
+            }}
+            className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? '' : 'w-14'} ${isNarrowLayout && isMenuExpanded ? 'absolute inset-y-0 left-0 z-30' : ''}`}
             aria-label='Side menu'
           >
             <nav className='flex flex-col gap-1'>
@@ -258,11 +322,14 @@ export function App(): ReactElement {
                 onClick={() => {
                   setCurrentPanel('CREATE_GROUP');
                   setPanelGroupSelected(null);
+                  if (isNarrowLayout) {
+                    setIsMenuExpanded(false);
+                  }
                 }}
                 type='button'
                 className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
               >
-                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>＋</span>
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>+</span>
                 <span
                   className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
                   style={{ maxWidth: 'calc(100% - 2.5rem)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}
@@ -274,11 +341,14 @@ export function App(): ReactElement {
                 onClick={() => {
                   setCurrentPanel('ALL_GROUP');
                   setPanelGroupSelected(null);
+                  if (isNarrowLayout) {
+                    setIsMenuExpanded(false);
+                  }
                 }}
                 type='button'
                 className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
               >
-                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>＋</span>
+                <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>+</span>
                 <span
                   className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
                   style={{ maxWidth: 'calc(100% - 2.5rem)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}
@@ -295,22 +365,31 @@ export function App(): ReactElement {
                     onClick={() => {
                       setCurrentPanel('BREAKDOWN_GROUP');
                       setPanelGroupSelected(group);
+                      if (isNarrowLayout) {
+                        setIsMenuExpanded(false);
+                      }
                     }}
                     type='button'
-                    className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case' : 'justify-center p-0'}`}
+                    className={`btn btn-ghost btn-sm w-full ${isMenuExpanded ? 'justify-start gap-2 px-2 normal-case min-w-0 text-left' : 'justify-center p-0'}`}
                   >
-                    <span className='grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold'>
+                    <span
+                      className='tooltip tooltip-right grid h-6 w-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-bold before:max-w-56 before:whitespace-normal before:break-normal before:text-left'
+                      title={group.name}
+                      data-tip={group.name}
+                    >
                       {group.name.charAt(0).toUpperCase()}
                     </span>
-                    <span
-                      style={{ maxWidth: isMenuExpanded ? 'calc(100% - 2.5rem)' : '100%', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' }}
-                    >
-                      <MarqueeText
-                        className={`whitespace-nowrap text-[clamp(0.65rem,1.05vw,0.875rem)] leading-none ${isMenuExpanded ? 'inline' : 'hidden'}`}
-                        hold={1200}
+                    <span className={`min-w-0 ${isMenuExpanded ? 'mr-8 flex-1' : 'hidden'}`} style={{ minWidth: 0 }}>
+                      <span
+                        className='block truncate whitespace-nowrap leading-none text-ellipsis overflow-hidden'
+                        style={{
+                          fontSize: 'clamp(0.6rem, 1.1vw, 0.8rem)',
+                          maxWidth: '100%',
+                        }}
+                        title={group.name}
                       >
                         {group.name}
-                      </MarqueeText>
+                      </span>
                     </span>
                   </button>
                   {isMenuExpanded && (
@@ -323,6 +402,9 @@ export function App(): ReactElement {
                         e.stopPropagation();
                         setCurrentPanel('EDIT_GROUP');
                         setPanelGroupSelected(group);
+                        if (isNarrowLayout) {
+                          setIsMenuExpanded(false);
+                        }
                       }}
                     >
                       <svg xmlns='http://www.w3.org/2000/svg' className='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='2'>
@@ -355,10 +437,10 @@ export function App(): ReactElement {
             </div>
           </aside>
 
-          <div className='card flex-1 border border-base-300 bg-base-200 shadow-lg'>
-            <div className='card-body text-center'>
+          <div className='card rounded-box flex-1 border border-base-300 bg-base-200 shadow-lg'>
+            <div className={`card-body text-center ${currentPanel === 'CREATE_GROUP' ? 'px-2 sm:px-3' : ''}`}>
               {currentPanel === 'CREATE_GROUP'
-                && <CreateGroupDisplay />}
+                && <CreateGroupDisplay guilds={guildsAvailable} currentGroupCountByGuild={currentGroupCountByGuild} cachedGroupNames={cachedGroupNames} />}
               {currentPanel === 'ALL_GROUP'
                 && <AllUserGroupDisplay />}
               {currentPanel === 'BREAKDOWN_GROUP' && panelGroupSelected !== null
