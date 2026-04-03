@@ -164,3 +164,5 @@ If you are not sure about the best practices for any of these technologies, you 
 - Devcontainers
 
 This project connects to an External API, the Pulsar API, to fetch and manage data states for the application. The user will provide routes and data structures for the API, and you will need to implement the necessary code to connect to the API and manage the data states in the application.
+
+Please use all available MCP Services that are relevant to the task at hand. Daisy UI MCP is the primary MCP for this project, but you should also use any other MCP services that are relevant to the task at hand. Always research the best practices for using these MCP services on the internet before using them, and make sure to follow those best practices in the code you generate.

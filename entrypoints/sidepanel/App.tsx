@@ -315,7 +315,7 @@ export function App(): ReactElement {
               maxWidth: isMenuExpanded ? (isNarrowLayout ? narrowOverlayWidth : '13.75rem') : undefined,
             }}
             className={`flex shrink-0 flex-col rounded-box border border-base-300 bg-base-100 p-2 shadow-lg transition-[width] duration-300 ${isMenuExpanded ? '' : 'w-14'} ${isNarrowLayout && isMenuExpanded ? 'absolute inset-y-0 left-0 z-30' : ''}`}
-            aria-label='Side menu'
+            aria-label='Side Menu'
           >
             <nav className='flex flex-col gap-1'>
               <button
