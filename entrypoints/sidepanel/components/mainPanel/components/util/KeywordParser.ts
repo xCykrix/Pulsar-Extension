@@ -4,6 +4,10 @@ export class KeywordParser {
   public static parseKeyword(input: string): string[] | null {
     const matches: string[] = [];
 
+    if (input.trim().length === 0) {
+      return [];
+    }
+
     for (const rawLine of input.split(/\r?\n/u)) {
       const line = rawLine.trim();
       if (line.length === 0) {

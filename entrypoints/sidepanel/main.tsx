@@ -9,7 +9,7 @@ import './style.css';
 const rootElement = globalThis.document.getElementById('root');
 
 if (!rootElement) {
-  throw new Error('Sidepanel root element was not found.');
+  throw new Error('Root Element Unavailable');
 }
 
 createRoot(rootElement).render(

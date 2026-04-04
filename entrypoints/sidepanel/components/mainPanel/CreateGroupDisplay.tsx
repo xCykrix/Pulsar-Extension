@@ -1,22 +1,46 @@
 /** @jsxImportSource react */
 
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
+import { KeywordInput } from './components/KeywordInput.tsx';
 import { TimeInput } from './components/TimeInput.tsx';
+import { KeywordParser } from './components/util/KeywordParser.ts';
 
 interface CreateGroupDisplayProps {
-  guilds: Array<{ guildId: string; guildName: string; maxNotificationGroup: number }>;
+  guilds: Array<{
+    guildId: string;
+    guildName: string;
+    maxNotificationGroup: number;
+    maxKeywordsPerNotificationGroup: number;
+  }>;
   currentGroupCountByGuild: Record<string, number>;
   cachedGroupNames: string[];
 }
 
 export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGroupNames }: CreateGroupDisplayProps): ReactElement {
-  const capacityReachedMessage = 'Limit Reached. Please edit or delete an existing Notification Group.';
-  const shouldEnableGuildScroll = guilds.length > 3;
-  const [isGuildMenuOpen, setIsGuildMenuOpen] = useState(false);
+  // Guild State
   const [selectedGuildId, setSelectedGuildId] = useState<string>('');
-  const [groupNameInput, setGroupNameInput] = useState('');
+  const [isGuildMenuOpen, setIsGuildMenuOpen] = useState(false);
+  const shouldEnableGuildScroll = guilds.length > 3;
   const menuRef = useRef<HTMLDivElement | null>(null);
-  // Active Time Window state
+
+  // Group Name State
+  const [groupNameInput, setGroupNameInput] = useState('');
+
+  // Keyword State
+  const [keywords, setKeywords] = useState('');
+  const parsedKeywords = useMemo(() => KeywordParser.parseKeyword(keywords), [keywords]);
+  const keywordCount = Array.isArray(parsedKeywords) ? parsedKeywords.length : 0;
+  const keywordError = useMemo(() => {
+    if (keywordCount === null) {
+      return 'Failed to Parse Keywords. Please check your syntax or contact support.';
+    }
+    if (keywordCount === 0) {
+      return 'You must specify at least one positive or negative keyword.';
+    }
+    return undefined;
+  }, [parsedKeywords, keywordCount]);
+
+  // Active Time Window State
   const [useActiveTimeWindow, setUseActiveTimeWindow] = useState(false);
   const [startTimeObj, setStartTimeObj] = useState<{ time: string; meridiem: 'AM' | 'PM' }>({ time: '', meridiem: 'AM' });
   const [endTimeObj, setEndTimeObj] = useState<{ time: string; meridiem: 'AM' | 'PM' }>({ time: '', meridiem: 'PM' });
@@ -30,42 +54,49 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
       setEndTimeObj({ time: '', meridiem: 'PM' });
       setStartTimeError(null);
       setEndTimeError(null);
+    }
+  }, [useActiveTimeWindow]);
+
+  // Validate Time Input (Strict)
+  useEffect(() => {
+    if (!useActiveTimeWindow) {
       return;
     }
+    setStartTimeError(null);
+    setEndTimeError(null);
 
     // Accepts 3 or 4 digits: 800, 0800, 930, 0930, 1200, etc.
-    const time12hRegex = /^(0?[1-9]|1[0-2])[0-5][0-9]$/;
-    const startFilled = startTimeObj.time && (startTimeObj.time.length === 3 || startTimeObj.time.length === 4);
-    const endFilled = endTimeObj.time && (endTimeObj.time.length === 3 || endTimeObj.time.length === 4);
+    const time12h = /^(0?[1-9]|1[0-2])[0-5][0-9]$/;
+    const hasStartTimeInput = startTimeObj.time && (startTimeObj.time.length === 3 || startTimeObj.time.length === 4);
+    const hasEndTimeInput = endTimeObj.time && (endTimeObj.time.length === 3 || endTimeObj.time.length === 4);
 
-    let startErr: string | null = null;
-    let endErr: string | null = null;
+    // Pad to 4 Digits from Start
+    const startPadded = startTimeObj.time.padStart(4, '0');
+    const endPadded = endTimeObj.time.padStart(4, '0');
 
-    // 1. Validate 12-hour time format
-    // Pad to 4 digits for regex test
-    const padTime = (t: string) => t.length === 3 ? `0${t}` : t;
-    if (startFilled && !time12hRegex.test(padTime(startTimeObj.time))) {
-      startErr = 'Invalid 12-hour time (hhmm)';
+    // If any input is present, it must be valid
+    if (startTimeObj.time.length > 0 && (!hasStartTimeInput || !time12h.test(startPadded))) {
+      setStartTimeError('Invalid 12-Hour Time (HH:MM)');
     }
-    if (endFilled && !time12hRegex.test(padTime(endTimeObj.time))) {
-      endErr = 'Invalid 12-hour time (hhmm)';
+    if (endTimeObj.time.length > 0 && (!hasEndTimeInput || !time12h.test(endPadded))) {
+      setEndTimeError('Invalid 12-Hour Time (HH:MM)');
     }
 
-    // 2. If either is specified, both must be specified
-    if ((startFilled && !endFilled) || (!startFilled && endFilled)) {
-      if (!startFilled) {
-        startErr = 'Start time required if end time set';
+    // If either is specified, both must be specified
+    if ((hasStartTimeInput && !hasEndTimeInput) || (!hasStartTimeInput && hasEndTimeInput)) {
+      if (!hasStartTimeInput) {
+        setStartTimeError('Start Time is Required.');
       }
-      if (!endFilled) {
-        endErr = 'End time required if start time set';
+      if (!hasEndTimeInput) {
+        setEndTimeError('End Time is Required.');
       }
     }
 
-    // 3 & 4. Start cannot be after end, end cannot be before start
+    // If both are filled and valid, check logical order
     if (
-      startFilled && endFilled
-      && time12hRegex.test(padTime(startTimeObj.time))
-      && time12hRegex.test(padTime(endTimeObj.time))
+      hasStartTimeInput && hasEndTimeInput
+      && time12h.test(startPadded)
+      && time12h.test(endPadded)
     ) {
       // Convert to minutes since midnight for comparison
       const parse = (t: string, mer: 'AM' | 'PM') => {
@@ -84,13 +115,10 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
       const startMins = parse(startTimeObj.time, startTimeObj.meridiem);
       const endMins = parse(endTimeObj.time, endTimeObj.meridiem);
       if (startMins > endMins) {
-        startErr = 'Start time cannot be after end time';
-        endErr = 'End time cannot be before start time';
+        setStartTimeError('Start Time cannot be after End Time.');
+        setEndTimeError('End Time cannot be before Start Time.');
       }
     }
-
-    setStartTimeError(startErr);
-    setEndTimeError(endErr);
   }, [useActiveTimeWindow, startTimeObj, endTimeObj]);
 
   const selectedGuildName = useMemo(() => {
@@ -118,6 +146,31 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
     return `${nextFontSize.toFixed(3)}rem`;
   }, [groupNameInput.length]);
 
+  const allValid = useMemo(() => {
+    // Group name must not be taken and not empty
+    if (isGroupNameTaken || trimmedGroupName.length === 0) {
+      return false;
+    }
+    // At least one keyword
+    if (keywordError) {
+      return false;
+    }
+    // If active time window is enabled, both fields must be filled and valid (empty is invalid)
+    if (useActiveTimeWindow) {
+      const startFilled = startTimeObj.time && (startTimeObj.time.length === 3 || startTimeObj.time.length === 4);
+      const endFilled = endTimeObj.time && (endTimeObj.time.length === 3 || endTimeObj.time.length === 4);
+      // Both must be filled
+      if (!startFilled || !endFilled) {
+        return false;
+      }
+      // Both must be valid
+      if (startTimeError || endTimeError) {
+        return false;
+      }
+    }
+    return true;
+  }, [isGroupNameTaken, trimmedGroupName.length, keywordError, useActiveTimeWindow, startTimeObj, endTimeObj, startTimeError, endTimeError]);
+
   useEffect(() => {
     const clickOutsideListener = (event: MouseEvent): void => {
       if (menuRef.current !== null && !menuRef.current.contains(event.target as Node)) {
@@ -132,10 +185,9 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
   }, []);
 
   return (
-    <div className='flex h-full flex-col items-center justify-start'>
-      <h1 className='text-1xl font-bold'>Create Notification Group</h1>
-
-      <div className='mt-2 w-full max-w-md self-center px-0 text-center sm:px-1'>
+    <div className='relative h-full w-full flex flex-col items-center justify-start'>
+      <h1 className='text-1xl font-bold' style={{ marginTop: 0, marginBottom: 0 }}>Create Notification Group</h1>
+      <div className='w-full max-w-md self-center px-0 text-center sm:px-1 pb-20' style={{ marginTop: 0, paddingTop: 0 }}>
         <p className='text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-base-content/60'>Guild</p>
 
         <div ref={menuRef} className='relative mt-1'>
@@ -176,8 +228,8 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
                     return (
                       <span
                         className={`block ${isAtCapacity ? 'tooltip tooltip-bottom before:max-w-64 before:whitespace-normal before:text-left' : ''}`}
-                        data-tip={isAtCapacity ? capacityReachedMessage : undefined}
-                        title={isAtCapacity ? capacityReachedMessage : undefined}
+                        data-tip={isAtCapacity ? 'Limit Reached. Please edit or delete an existing Notification Group.' : undefined}
+                        title={isAtCapacity ? 'Limit Reached. Please edit or delete an existing Notification Group.' : undefined}
                       >
                         <button
                           type='button'
@@ -224,47 +276,74 @@ export function CreateGroupDisplay({ guilds, currentGroupCountByGuild, cachedGro
             </div>
             {isGroupNameTaken && <div className='mt-1 text-[0.63rem] text-error'>Provided Group Name must be Unique.</div>}
 
-            {/* Active Time Window Step */}
             {!isGroupNameTaken && groupNameInput.trim().length > 0 && (
-              <div className='mt-6 flex flex-col items-center'>
-                <label className='flex items-center gap-2 cursor-pointer mb-4'>
-                  <input
-                    type='checkbox'
-                    className='toggle toggle-primary'
-                    checked={useActiveTimeWindow}
-                    onChange={() => setUseActiveTimeWindow((v) => !v)}
+              <>
+                {/* KeywordInput Step */}
+                <div className='mt-6 flex flex-col items-center'>
+                  <KeywordInput
+                    value={keywords}
+                    onChange={setKeywords}
+                    maxLength={2000}
+                    rows={4}
+                    keywordLimit={guilds.find((g) => g.guildId === selectedGuildId)?.maxKeywordsPerNotificationGroup ?? null}
+                    keywordCount={keywordCount}
+                    errorText={keywordError}
                   />
-                  <span className='text-[0.85rem] font-medium'>Active Time Window</span>
-                </label>
-                <div className='flex flex-col items-center w-full max-w-xs'>
-                  <div className='flex w-full justify-center items-start gap-1'>
-                    <div className='flex-1 min-w-0'>
-                      <TimeInput
-                        label='Start Time'
-                        value={startTimeObj}
-                        onChange={setStartTimeObj}
-                        disabled={!useActiveTimeWindow}
-                        error={startTimeError ?? undefined}
+                </div>
+                {/* Active Time Window Step (with card) */}
+                <div className='mt-6 flex flex-col items-center w-full'>
+                  <div className='w-full max-w-xs rounded-box border border-base-300 bg-base-200 shadow-sm p-3'>
+                    <label className='flex items-center gap-2 cursor-pointer mb-4'>
+                      <input
+                        type='checkbox'
+                        className='toggle toggle-primary'
+                        checked={useActiveTimeWindow}
+                        onChange={() => setUseActiveTimeWindow((v) => !v)}
                       />
-                    </div>
-                    <div className='flex items-start pt-7 h-full'>
-                      <div className='border-l border-base-300 h-10 mx-1'></div>
-                    </div>
-                    <div className='flex-1 min-w-0'>
-                      <TimeInput
-                        label='End Time'
-                        value={endTimeObj}
-                        onChange={setEndTimeObj}
-                        disabled={!useActiveTimeWindow}
-                        error={endTimeError ?? undefined}
-                      />
+                      <span className='text-[0.85rem] font-medium'>Active Time Window</span>
+                    </label>
+                    <div className='flex flex-col items-center w-full'>
+                      <div className='flex w-full justify-center items-start gap-1'>
+                        <div className='flex-1 min-w-0'>
+                          <TimeInput
+                            label='Start Time'
+                            value={startTimeObj}
+                            onChange={setStartTimeObj}
+                            disabled={!useActiveTimeWindow}
+                            error={startTimeError ?? undefined}
+                          />
+                        </div>
+                        <div className='flex items-start pt-7 h-full'>
+                          <div className='border-l border-base-300 h-10 mx-1'></div>
+                        </div>
+                        <div className='flex-1 min-w-0'>
+                          <TimeInput
+                            label='End Time'
+                            value={endTimeObj}
+                            onChange={setEndTimeObj}
+                            disabled={!useActiveTimeWindow}
+                            error={endTimeError ?? undefined}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
+      </div>
+      {/* Create Button absolutely anchored at bottom */}
+      <div className='absolute bottom-0 left-0 w-full flex justify-center pb-4'>
+        <button
+          type='button'
+          className='btn btn-primary btn-sm w-28 rounded-lg shadow text-base font-semibold'
+          style={{ minWidth: '6rem' }}
+          disabled={!allValid}
+        >
+          Create
+        </button>
       </div>
     </div>
   );

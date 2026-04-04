@@ -23,36 +23,31 @@ export function KeywordInput({
   errorText,
   keywordCount,
   keywordLimit,
-  maxLength = 500,
+  maxLength = 2000,
   rows = 5,
 }: KeywordInputProps): ReactElement {
+  // Drafting Value
+  const [draftValue, setDraftValue] = useState(value);
+
+  // References
   const editorRef = useRef<HTMLDivElement | null>(null);
   const pendingSelectionRef = useRef<SelectionOffsets | null>(null);
   const isComposingRef = useRef(false);
   const latestValueRef = useRef(value);
-  const [draftValue, setDraftValue] = useState(value);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) {
       return;
     }
-
     if (isComposingRef.current) {
       return;
     }
-
-    if (value !== latestValueRef.current) {
-      latestValueRef.current = value;
-      setDraftValue(value);
-      syncEditorMarkup(editor, value, null);
-      pendingSelectionRef.current = null;
-      return;
-    }
-
-    if (editor.innerHTML === '') {
-      syncEditorMarkup(editor, latestValueRef.current, null);
-    }
+    // Always sync editor content to value prop
+    latestValueRef.current = value;
+    setDraftValue(value);
+    syncEditorMarkup(editor, value, null);
+    pendingSelectionRef.current = null;
   }, [value]);
 
   const commitValue = (nextValue: string, selection: SelectionOffsets | null): void => {
@@ -67,10 +62,7 @@ export function KeywordInput({
     syncEditorMarkup(editorRef.current, truncatedValue, pendingSelectionRef.current);
     pendingSelectionRef.current = null;
 
-    if (truncatedValue === value) {
-      return;
-    }
-
+    // Always call onChange to ensure parent state updates and keyword count is correct
     startTransition(() => {
       onChange(truncatedValue);
     });
@@ -81,8 +73,8 @@ export function KeywordInput({
     if (!editor) {
       return;
     }
-
-    commitValue(readEditableText(editor), getSelectionOffsets(editor));
+    const text = readEditableText(editor);
+    commitValue(text, getSelectionOffsets(editor));
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>): void => {
@@ -134,8 +126,8 @@ export function KeywordInput({
         <span className='text-right text-[11px] leading-tight text-base-content/60'>
           {keywordLimit === null || keywordLimit === undefined ? <span>{draftValue.length}/{maxLength}</span> : (
             <>
-              <span className='block'>{keywordCount ?? 0}/{keywordLimit} keywords</span>
-              <span className='block'>{draftValue.length}/{maxLength} chars</span>
+              <span className='block'>{keywordCount ?? 0}/{keywordLimit} Keywords ({draftValue.length}/{maxLength})</span>
+              <span className='block'></span>
             </>
           )}
         </span>

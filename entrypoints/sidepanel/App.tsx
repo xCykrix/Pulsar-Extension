@@ -13,7 +13,7 @@ import { type UseAuthentication, useAuthentication } from './hooks/useAuthentica
 import { useFirebaseTokenRegistration } from './hooks/useFirebaseTokenRegistration.ts';
 
 export function App(): ReactElement {
-  const [upstart, setUpstart] = useState(false);
+  const [upstarted, setUpstarted] = useState(false);
 
   // Authentication and Device Registration to FCM
   const appUseAuthentication: UseAuthentication = useAuthentication();
@@ -21,13 +21,19 @@ export function App(): ReactElement {
 
   // Menu Control and State
   const [currentPanel, setCurrentPanel] = useState<'ALL_GROUP' | 'BREAKDOWN_GROUP' | 'CREATE_GROUP' | 'EDIT_GROUP'>('ALL_GROUP');
+  const [isNarrowLayout, setIsNarrowLayout] = useState(false);
+  const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(globalThis.window.innerWidth);
   const [panelGroupSelected, setPanelGroupSelected] = useState<UserPinger | null>(null);
 
-  const [isMenuExpanded, setIsMenuExpanded] = useState(false);
-  const [isNarrowLayout, setIsNarrowLayout] = useState(false);
-  const [viewportWidth, setViewportWidth] = useState(globalThis.window.innerWidth);
+  // Cached Data from Background
   const [userPingerGroups, setUserPingerGroups] = useState<UserPinger[]>([]);
-  const [guildsAvailable, setGuildsAvailable] = useState<Array<{ guildId: string; guildName: string; maxNotificationGroup: number }>>([]);
+  const [guildsAvailable, setGuildsAvailable] = useState<Array<{ guildId: string; guildName: string; maxNotificationGroup: number; maxKeywordsPerNotificationGroup: number }>>([]);
+  const cachedGroupNames = userPingerGroups.map((group) => group.name);
+  const currentGroupCountByGuild = userPingerGroups.reduce<Record<string, number>>((acc, group) => {
+    acc[group.guildId] = (acc[group.guildId] ?? 0) + 1;
+    return acc;
+  }, {});
 
   // Toast Notification Control
   const [fcmToast, setFcmToast] = useState<{ title: string; body: string } | null>(null);
@@ -39,8 +45,16 @@ export function App(): ReactElement {
   const [deliveryLatencyMs, setDeliveryLatencyMs] = useState<number | 'N/A'>('N/A');
   const [secondsSinceData, setSecondsSinceData] = useState<number | 'N/A'>('N/A');
 
-  // Constants
-  const cachedGroupNames = userPingerGroups.map((group) => group.name);
+  // Stylistic Details
+  const clampedNarrowViewport = Math.max(320, Math.min(viewportWidth, 600));
+  const narrowStartPx = 13.75 * 16; // Matches non-narrow min width at 600px handoff.
+  const narrowEndPx = 0.49 * 320; // About half width at the smallest supported narrow viewport.
+  const delta = (600 - clampedNarrowViewport) / (600 - 320);
+  const narrowRawWidthPx = narrowStartPx + (narrowEndPx - narrowStartPx) * delta;
+  const narrowMinReadablePx = 12 * 16;
+  const narrowMaxAllowedPx = viewportWidth * 0.92;
+  const narrowOverlayWidthPx = Math.min(narrowMaxAllowedPx, Math.max(narrowMinReadablePx, narrowRawWidthPx));
+  const narrowOverlayWidth = `${narrowOverlayWidthPx}px`;
 
   // Message Processor
   useEffect(() => {
@@ -82,6 +96,7 @@ export function App(): ReactElement {
               guildId: guildAccess.guildId,
               guildName: guildAccess.guildName,
               maxNotificationGroup: guildAccess.maxNotificationGroup,
+              maxKeywordsPerNotificationGroup: guildAccess.maxKeywordsPerNotificationGroup,
             }))
             .sort((a, b) => a.guildName.localeCompare(b.guildName));
           setGuildsAvailable(nextGuilds);
@@ -130,6 +145,22 @@ export function App(): ReactElement {
     };
   }, [toastTimeoutRef]);
 
+  // Detect narrow layouts to switch expanded menu to overlay mode.
+  useEffect(() => {
+    const media = globalThis.matchMedia('(max-width: 600px)');
+    const update = () => {
+      setIsNarrowLayout(media.matches);
+      setViewportWidth(globalThis.window.innerWidth);
+    };
+    update();
+    media.addEventListener('change', update);
+    globalThis.window.addEventListener('resize', update);
+    return () => {
+      media.removeEventListener('change', update);
+      globalThis.window.removeEventListener('resize', update);
+    };
+  }, []);
+
   // Tick Seconds Since Data Interval
   useEffect(() => {
     if (lastDataAt === null) {
@@ -147,40 +178,11 @@ export function App(): ReactElement {
     };
   }, [lastDataAt]);
 
-  // Detect narrow layouts to switch expanded menu to overlay mode.
-  useEffect(() => {
-    const media = globalThis.matchMedia('(max-width: 600px)');
-    const update = () => {
-      setIsNarrowLayout(media.matches);
-      setViewportWidth(globalThis.window.innerWidth);
-    };
-    update();
-    media.addEventListener('change', update);
-    globalThis.window.addEventListener('resize', update);
-    return () => {
-      media.removeEventListener('change', update);
-      globalThis.window.removeEventListener('resize', update);
-    };
-  }, []);
-
-  const clampedNarrowViewport = Math.max(320, Math.min(viewportWidth, 600));
-  const narrowStartPx = 13.75 * 16; // Matches non-narrow min width at 600px handoff.
-  const narrowEndPx = 0.49 * 320; // About half width at the smallest supported narrow viewport.
-  const t = (600 - clampedNarrowViewport) / (600 - 320);
-  const narrowRawWidthPx = narrowStartPx + (narrowEndPx - narrowStartPx) * t;
-  const narrowMinReadablePx = 12 * 16;
-  const narrowMaxAllowedPx = viewportWidth * 0.92;
-  const narrowOverlayWidthPx = Math.min(narrowMaxAllowedPx, Math.max(narrowMinReadablePx, narrowRawWidthPx));
-  const narrowOverlayWidth = `${narrowOverlayWidthPx}px`;
-  const currentGroupCountByGuild = userPingerGroups.reduce<Record<string, number>>((accumulator, group) => {
-    accumulator[group.guildId] = (accumulator[group.guildId] ?? 0) + 1;
-    return accumulator;
-  }, {});
-
-  if (!upstart) {
-    setUpstart(true);
+  // Execute a One-Time Upstart for Fast Data Sync and Background Polling Kickoff.
+  if (!upstarted) {
+    setUpstarted(true);
     browser.runtime.sendMessage({ upstart: true }).catch(() => {
-      // Initial Poll Failure is Non-Critical as Background Polling will Continue.
+      // Initial Poll Failure is Non-Critical as Background Polling will Synchronize.
     });
     console.info('Pulsar Upstart Message Sent to Background.');
   }
